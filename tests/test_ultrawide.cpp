@@ -6,6 +6,7 @@ using ac04::port::Display;
 using ac04::port::SetDisplayOptions;
 using ac04::port::UltrawideProjectionWidth;
 using ac04::port::UltrawideUses4x3Distances;
+using ac04::port::UltrawideWorldMarkerX;
 
 TEST_CASE("ultrawide: original 4:3 and 16:9 presentation is unchanged") {
     SetDisplayOptions(false, true, 3440, 1440);
@@ -81,4 +82,38 @@ TEST_CASE("ultrawide: inactive keeps the original 16:9 width and distances") {
     CHECK_FALSE(UltrawideUses4x3Distances());
     SetDisplayOptions(true, false, 2560, 1080);
     CHECK_FALSE(UltrawideUses4x3Distances());
+}
+
+namespace {
+// gs.vert's overlay transform, in the same units as the input.
+double NarrowLikeShader(double x, double centre, double scale) { return centre + (x - centre) * scale; }
+}  // namespace
+
+TEST_CASE("ultrawide: world-anchored HUD markers land on their projected point after narrowing") {
+    const int centre = 0x8000;  // full-screen view centre, GS 1/16-pixel units
+    SetDisplayOptions(true, true, 2560, 1080);
+    const double s = Display().hud_x_scale;
+    for (int x : {0x7000, 0x7400, 0x7C00, 0x8000, 0x8123, 0x8C00, 0x9000}) {
+        const int pre = UltrawideWorldMarkerX(x, centre);
+        CHECK(NarrowLikeShader(pre, centre, s) == doctest::Approx(x).epsilon(1e-4));
+        // A box drawn at pre +- half width keeps its narrowed (16:9) shape around the true point.
+        const int hw = 0x60;
+        const double l = NarrowLikeShader(pre - hw, centre, s), r = NarrowLikeShader(pre + hw, centre, s);
+        CHECK((l + r) * 0.5 == doctest::Approx(x).epsilon(1e-4));
+        CHECK(r - l == doctest::Approx(2 * hw * s));
+    }
+    // Split-screen style off-centre view centre.
+    CHECK(NarrowLikeShader(UltrawideWorldMarkerX(0x7800, 0x7000), 0x7000, s) == doctest::Approx(0x7800).epsilon(1e-4));
+    SetDisplayOptions(true, true, 3440, 1440);
+    CHECK(NarrowLikeShader(UltrawideWorldMarkerX(0x8800, centre), centre, Display().hud_x_scale) ==
+          doctest::Approx(0x8800).epsilon(1e-4));
+}
+
+TEST_CASE("ultrawide: world marker X is unchanged outside ultrawide") {
+    SetDisplayOptions(true, true, 1920, 1080);
+    CHECK(UltrawideWorldMarkerX(0x7123, 0x8000) == 0x7123);
+    SetDisplayOptions(false, true, 2560, 1080);
+    CHECK(UltrawideWorldMarkerX(0x9000, 0x8000) == 0x9000);
+    SetDisplayOptions(true, false, 2560, 1080);
+    CHECK(UltrawideWorldMarkerX(0x9000, 0x8000) == 0x9000);
 }

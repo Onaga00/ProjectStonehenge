@@ -1,5 +1,6 @@
 #include "common/port_hooks.h"
 
+#include <cmath>
 #include <numeric>
 
 namespace ac04::port {
@@ -61,6 +62,13 @@ float UltrawideProjectionWidth(float width_4x3, float width_16x9) {
 bool UltrawideUses4x3Distances() {
     const DisplayOptions& o = Display();
     return o.ultrawide && o.keep_4x3_fov;
+}
+
+s32 UltrawideWorldMarkerX(s32 x, s32 centre) {
+    const DisplayOptions& o = Display();
+    if (!o.ultrawide || !(o.hud_x_scale > 0.01f) || !(o.hud_x_scale < 1.0f)) return x;
+    const double d = static_cast<double>(x) - static_cast<double>(centre);
+    return centre + static_cast<s32>(std::lround(d / static_cast<double>(o.hud_x_scale)));
 }
 
 }  // namespace ac04::port

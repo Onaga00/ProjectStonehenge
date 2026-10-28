@@ -378,6 +378,11 @@ namespace {
 constexpr u32 kHud = 0x00420670;
 u16 HudU16(u32 off) { return GRef<u16>(kHud + off); }
 
+// port: projected X of a world-anchored marker, pre-expanded about the view's frame centre
+// (0x00420684) so the ultrawide overlay narrowing puts it back on its object
+// (port::UltrawideWorldMarkerX). Identity outside ultrawide flight.
+s32 MarkerX(s32 x) { return port::UltrawideWorldMarkerX(x, static_cast<s32>(HudU16(0x14))); }
+
 // Speed for the HUD: |velocity| in the unit of option 0x002A15CC bit 2 (metric: x C(a) x 3600 x
 // 60 / 1000 x C(b); else / C(c) between, then x C(d)).
 f32 HudSpeed(u32 unit, u32 metric_a, u32 metric_b, u32 imp_a, u32 imp_b, u32 imp_c) {
@@ -457,7 +462,7 @@ void func_00160200(u32 cam, u32 list, u32 unit) {
         if (!(-1 < a)) a = 0;
         if (amax < a) a = amax;
         GRef<s32>(o - 4) = a;
-        GRef<u32>(o) = W(out);
+        GRef<s32>(o) = MarkerX(GRef<s32>(out));  // port: world-anchored (ultrawide)
         GRef<u32>(o + 8) = 0xFFFFFD;
         GRef<u32>(o + 4) = W(out + 4);
         GRef<u32>(o + 0xC) = 0;
@@ -478,7 +483,7 @@ void func_00160598(u32 cam, u32 list, u32 unit) {
     const s32 y = GRef<s32>(kHud + 4);
     if (y < 0x7200 || 0x8E00 < y) return;
     if (GRef<s32>(kHud + 0xC) <= 0) return;
-    const u32 sx = static_cast<u32>(x - (Wide() ? 0x90 : 0xC0)) & 0xFFFF;
+    const u32 sx = static_cast<u32>(MarkerX(x) - (Wide() ? 0x90 : 0xC0)) & 0xFFFF;  // port: MarkerX
     DrawHudSprite(list, 2, static_cast<u16>(sx), static_cast<u16>((HudU16(4) - 0x78) & 0xFFFF), 0x8C0, 0x9C0,
                   0x180, 0xF0, 0x100);
 }
@@ -1383,12 +1388,13 @@ void func_00164440(u32 cam, u32 list, u32 unit) {
     GRef<s32>(Q + 4) = GRef<s32>(Q + 4) - GRef<s32>(P + 4);
     func_0014C800(lead, b, unit, unit + 0x10, unit + 0x20);
     sceVu0RotTransPers(P, m, b, 1);
-    const s32 px = GRef<s32>(P) + GRef<s32>(Q), py = GRef<s32>(P + 4) + GRef<s32>(Q + 4);
-    GRef<s32>(P) = px;
+    const s32 px0 = GRef<s32>(P) + GRef<s32>(Q), py = GRef<s32>(P + 4) + GRef<s32>(Q + 4);
+    GRef<s32>(P) = px0;
     GRef<s32>(P + 4) = py;
     if (GRef<s32>(P + 8) < 0) return;
-    if (px < 0x7000 || 0x9000 < px) return;
+    if (px0 < 0x7000 || 0x9000 < px0) return;
     if (py < 0x7200 || 0x8E00 < py) return;
+    const s32 px = MarkerX(px0);  // port: world-anchored (ultrawide); the reticle's own offsets stay narrowed
     const u32 X = Wide() ? 0x00404CA8u : 0x00404C78u;
     const u32 U = 0x00404C28, V = 0x00404C50, Y = 0x00404CD8;
     const auto at = [](u32 tab, s32 i) { return GRef<s32>(tab + 4u * static_cast<u32>(i)); };
@@ -1468,6 +1474,7 @@ void func_00164BD8(u32 cam, u32 list, u32 unit) {
         if (GRef<s32>(P + 8) < 0) continue;
         if (static_cast<u32>(GRef<s32>(P) - 0x7000) >= 0x2001) continue;
         if (static_cast<u32>(GRef<s32>(P + 4) - 0x7200) >= 0x1C01) continue;
+        GRef<s32>(P) = MarkerX(GRef<s32>(P));  // port: world-anchored (ultrawide)
         const s32 cv = GRef<u8>(u + 0x54) == 2 ? 0xC20 : 0xB00;
         const s32 cu = (W(st + 0x14C) & 0x8000u) != 0 ? 0xE60 : 0xD40;
         const u32 p = AllocBucketPacket(list, 0, 6, 0, 0x50000006);
@@ -1690,12 +1697,22 @@ void func_00164F00(u32 cam, u32 list, u32 unit) {
         if (func_00153FD8(h, hit, unit, rel) < 0) return;
         sceVu0RotTransPers(st + 0x90, cam + 0xE0, hit, 1);
     }
+    // port: the impact points and the flight-path marker the fall lines start from are
+    // world-anchored; expand them for the ultrawide overlay narrowing only while drawing and
+    // restore the stored values afterwards (identity outside ultrawide).
+    const s32 keep90 = GRef<s32>(st + 0x90), keepA0 = GRef<s32>(st + 0xA0), keep_fpm = GRef<s32>(kHud);
+    GRef<s32>(st + 0x90) = MarkerX(keep90);
+    if (mode == 1) GRef<s32>(st + 0xA0) = MarkerX(keepA0);
+    GRef<s32>(kHud) = MarkerX(keep_fpm);
     if (mode == 0)
         func_00165310(list, st + 0x90);
     else if (mode == 1)
         func_001655E8(list, st + 0x90, st + 0xA0);
     else
         func_00165970(list, st + 0x90);
+    GRef<s32>(st + 0x90) = keep90;
+    GRef<s32>(st + 0xA0) = keepA0;
+    GRef<s32>(kHud) = keep_fpm;
 }
 
 // EE: 0x00165AB8
@@ -1743,6 +1760,7 @@ void func_00165AB8(u32 cam, u32 list, u32 unit) {
         if (static_cast<u32>(GRef<s32>(P) - 0x7000) >= 0x2001) continue;
         if (static_cast<u32>(GRef<s32>(P + 4) - 0x7200) >= 0x1C01) continue;
         if (GRef<s32>(P + 8) < 0 || GRef<s32>(P + 0xC) < 0) continue;
+        GRef<s32>(P) = MarkerX(GRef<s32>(P));  // port: world-anchored (ultrawide); labels follow
         if (dist(i) <= fpu::Add(F(u + 0x70), F(u + 0x70))) GRef<u32>(P + 8) = 0xFFFFFC;
         const u32 f188 = W(st + 0x188);
         u32 cell = 0x360;

@@ -111,6 +111,15 @@ float UltrawideProjectionWidth(float width_4x3, float width_16x9);
 // landing / takeoff camera K 0x0040DAC0 instead of 0x0040DAC4).
 bool UltrawideUses4x3Distances();
 
+// Ultrawide: the backend narrows every flight-overlay draw about its view centre by hud_x_scale
+// (gs.vert), which keeps gauges and text at their 16:9 shape but would also pull world-anchored
+// markers (target boxes, lock-on boxes, gun pipper, special-weapon reticle, flight-path marker)
+// toward the centre, away from the objects they mark. The HUD code passes those markers' projected
+// GS X (1/16-pixel units) through this to pre-expand it about `centre` by 1 / hud_x_scale, so after
+// the narrowing they land on their true projected position; their size offsets are added
+// afterwards and are still narrowed, so boxes keep their shape. Identity when not ultrawide.
+s32 UltrawideWorldMarkerX(s32 x, s32 centre);
+
 // Where each flight view's 2D overlay begins in the frame's DMA lists, for the optional
 // anti-aliasing pass (presentation.antialiasing): BuildFlightDrawLists records the first tag of each
 // view's overlay table in `built`; the main loop moves them to `sending` just before it sends the
