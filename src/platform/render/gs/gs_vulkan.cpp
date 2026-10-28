@@ -2117,6 +2117,11 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
     bool bound_depth_write = false;
     float bound_alpha_constant = 1.0f;
     VkDescriptorSet bound_texture = VK_NULL_HANDLE;  // set 1
+    // Current flight overlay (the same per-view points used by anti-aliasing). A different scissor
+    // is left alone, so the next split-screen view's 3D is not narrowed before its own point.
+    bool hud_view = false;
+    std::uint64_t hud_scissor = 0;
+    float hud_center = 0.0f;
     // The pipeline of the last key: consecutive draws mostly share one, and GetPipeline locks and
     // looks it up in the map.
     std::uint64_t last_key = 0;
@@ -2169,6 +2174,9 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
         const DrawCommand& d = draws[i];
         if (d.aa_point) {
             // A flight view's 3D is complete: anti-alias its rectangle before the HUD is drawn.
+            hud_view = hud_x_scale_ > 0.0f && hud_x_scale_ < 1.0f;
+            hud_scissor = d.scissor;
+            hud_center = (Bits(d.scissor, 0, 11) + Bits(d.scissor, 16, 11) + 1) * 0.5f;
             if (aa_mode_ != AntiAlias::kOff && aa_ready_) {
                 auto it = targets_.find(TargetKey(d.Fbp(), d.Fbw(), d.Fpsm()));
                 if (it != targets_.end()) {
@@ -2488,6 +2496,14 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
         // Native size: gs.vert maps GS pixels onto the whole (scaled) image.
         p.target_size[0] = static_cast<float>(target->native_w);
         p.target_size[1] = static_cast<float>(target->native_h);
+        const bool full_view = boxes[i][0] <= x0 && boxes[i][1] <= y0 && boxes[i][2] >= x1 + 1 &&
+                               boxes[i][3] >= y1 + 1;
+        if (hud_view && d.scissor == hud_scissor && !full_view) {
+            // HUD and menus keep their 16:9 shape. A full-view draw (notably the screen fade)
+            // still covers the extended sides rather than leaving them unfaded.
+            p.pad0[0] = hud_center;
+            p.pad0[1] = hud_x_scale_;
+        }
         p.scale = ts;
         p.tex_scale = tex_scale;
         std::int32_t flags = 0;

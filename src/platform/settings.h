@@ -43,6 +43,10 @@ struct PresentationSettings {
     int window_height = 960;
     int internal_scale = 1;         // renderer scale factor 1-kMaxInternalScale (docs/port/renderer.md §1)
     ScreenRatioDefault default_screen_ratio = ScreenRatioDefault::Monitor;
+    // Expand flight to the actual window aspect when wider than 16:9, with an undistorted HUD.
+    bool ultrawide = true;
+    // Ultrawide keeps the 4:3 mode's vertical field of view (true), or the game's 16:9 one (false).
+    bool ultrawide_4x3_fov = true;
     AntiAliasing antialiasing = AntiAliasing::Off;
     // Frame interpolation (ADR-002): above 60 presented frames per second the 3D is shown between
     // the last two game steps (platform/render/frame_interpolator.h). Presentation only.

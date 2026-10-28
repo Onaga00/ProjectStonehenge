@@ -33,6 +33,23 @@ TEST_CASE("output layout: exact 4:3 window and 16:9 aspect") {
     CHECK(w.y == 120);
 }
 
+TEST_CASE("output layout: ultrawide aspects fill their windows") {
+    auto a = FitAspect(2560, 1080, 64, 27);
+    CHECK(a.x == 0);
+    CHECK(a.y == 0);
+    CHECK(a.width == 2560);
+    CHECK(a.height == 1080);
+    auto b = FitAspect(3440, 1440, 43, 18);
+    CHECK(b.x == 0);
+    CHECK(b.y == 0);
+    CHECK(b.width == 3440);
+    CHECK(b.height == 1440);
+    auto letterboxed = FitAspect(1920, 1080, 64, 27);
+    CHECK(letterboxed.width == 1920);
+    CHECK(letterboxed.height == 810);
+    CHECK(letterboxed.y == 135);
+}
+
 TEST_CASE("output layout: degenerate sizes") {
     auto r = FitAspect(0, 600, 4, 3);
     CHECK(r.width == 0);

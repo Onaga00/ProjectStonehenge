@@ -50,6 +50,8 @@ The GRAPHICS page's DEFAULT button sets these values too.
 | `presentation.internal_scale` | `1`–`8` (internal rendering resolution; changes apply while running) | closest to the display (above); `1` in validation runs and on an integrated GPU (User decision 2026-11-03: applied when the file is written with the defaults, first start or a rejected file; `validation.md` §2ar) |
 | `presentation.frame_interpolation` | `true`, `false`: above 60 presented frames per second the 3D is drawn between the last two game steps (§2) | `true` |
 | `presentation.antialiasing` | `off`, `fxaa`, `smaa`: anti-aliasing of the flight views before their HUD (§2); `--antialiasing` for a session | `fxaa`; `off` in validation runs and on an integrated GPU (as `internal_scale`) |
+| `presentation.ultrawide` | `true`, `false`: during flight, expand 16:9 to the actual window aspect when wider than 16:9; undistorted HUD and pause menus, normal-aspect frontend menus and movies (§2) | `true` |
+| `presentation.ultrawide_4x3_fov` | `true`, `false`: ultrawide keeps the 4:3 mode's vertical field of view and camera distances in every flight view, replays and in-engine sequences (`true`), or widens the game's own 16:9 views (`false`) | `true` |
 | `presentation.default_screen_ratio` | `monitor` (the game's SCREEN RATIO starts at 16:9 on a monitor wider than 4:3, §2), `game` (the PS2 default, 4:3) | `monitor` |
 | `paths.iso` | disc image path | empty |
 | `audio.on_focus_loss` | `keep_playing`, `mute` | `keep_playing` |
@@ -205,6 +207,7 @@ Vibration (2026-10-22, User request): the values the game sends with `scePadSetA
 | Feature | Built as | Setting |
 |---|---|---|
 | Output scaling | the native (or N×) image is scaled to the window, 4:3 pillarboxed or 16:9 while the game's SCREEN RATIO option is on (main context flag 0x10000); filters sharp / smooth | `presentation.filter` |
+| Ultrawide (2026-10-28) | automatic during flight when SCREEN RATIO is 16:9 and the window is more than 1 % wider than 16:9. The flight and replay camera widths grow by window_aspect / (16/9) (Hor+, including split screen), and output uses the reduced actual window ratio, so both 2560×1080 (64:27) and 3440×1440 (43:18) fill the screen. The same per-view 3D/HUD boundary used by anti-aliasing narrows only the overlay by the inverse factor about its own centre, preserving its 16:9 shape; the 3D and full-view screen fades are not narrowed. Frontend menus, movies, 4:3 mode and ordinary 16:9 windows keep the original output. Validation runs keep the original projection and output. | `presentation.ultrawide` (file only) |
 | Window | windowed (size remembered) or fullscreen (a borderless window the size of the desktop) | `presentation.window_mode` |
 | V-sync, frame cap | presentation timing only; the simulation steps at 59.94 Hz (ADR-002). V-sync on = FIFO present mode and no frame cap; off = MAILBOX (or IMMEDIATE) and the cap | `presentation.vsync`, `presentation.frame_cap` |
 | Internal resolution 1–8× | frame-sized targets at N×, small shadow/glow targets at 1×, 2D sprites on their native texel grid, sprite edges on native pixel borders (`renderer.md` §1.7) | `presentation.internal_scale`, `--internal-scale` |

@@ -118,8 +118,10 @@ public:
     // Reads back the native image (RGBA8, rows top to bottom) for the native screenshot. Waits idle.
     bool CaptureNative(std::vector<uint8_t>& rgba, int& width, int& height);
 
-    // Display aspect of the game image (4:3, or 16:9 when the game's SCREEN RATIO flag is set).
+    // Display aspect of the game image (4:3 / 16:9, or the actual flight-window aspect in
+    // ultrawide), and the matching horizontal compensation of its 2D overlay.
     void SetDisplayAspect(int w, int h);
+    void SetHudXScale(float scale) { gs_backend_.SetHudXScale(scale); }
 
     // CPU cost of the renderer (debug overlay; averages logged at shutdown): GS processing of the
     // submitted steps since the last frame, recording of the frame, and the texture work.

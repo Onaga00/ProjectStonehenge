@@ -129,3 +129,18 @@ Implementation (S3, 2026-10-14):
 
 - In 16:9 mode (ctx flag 0x10000) every HUD sprite is drawn 3/4 as wide, fonts switch to narrower tables, and the view cameras use a 16:9-aware width (`../subsystems/camera-hud.md`). The picture is anamorphic: the same 512-pixel frame is meant to be shown at 16:9.
 - So the rule above applies to the flight scene too: the output pass presents at 16:9 when SCREEN RATIO is on.
+
+### Ultrawide flight presentation (2026-10-28)
+
+- `presentation.ultrawide` (default true) extends the 16:9 rule during scene 2 when the actual window aspect is more than 1 % wider than 16:9. It is Hor+, not a stretch.
+- `func_0010C9D0` (native counterpart of PCSX2 patch address 0x0010C9F4) and the replay setup `func_0010D470` multiply the original 16:9 projection width by window_aspect / (16/9). Split screen still takes half of that expanded width per player.
+- The output pass uses the reduced actual window ratio; `FitAspect` needs no special ultrawide case.
+- The per-view 3D/HUD source point selects overlay draws for a vertex-stage X transform, narrowed by (16/9) / window_aspect around the view's scissor centre. A different scissor is not transformed. Full-view draws such as screen fades are excluded so they still cover the extended sides.
+- Frontend menus and movies keep their original 4:3 / 16:9 output; in-flight pause and game-over overlays receive the same HUD correction. The 4:3 SCREEN RATIO mode is unchanged; validation runs disable the feature.
+- This is presentation-only host configuration through `port::DisplayOptions`; game code does not read settings.json. No native draw-buffer size or GS display register is changed.
+- Field-of-view basis (`presentation.ultrawide_4x3_fov`, default true). The game's 16:9 mode is not uniformly Hor+:
+  - HUD-only and cockpit views: 640 or K 0x0040DAA0 (853.33 = 640 x 4/3) wide, 480 high, same distance K 0x0040DAB4 in both modes. Hor+, same vertical FOV as 4:3.
+  - External (third-person) view: distance K 0x0040DAC8 in 4:3, K 0x0040DACC in 16:9. Carrier landing / takeoff camera: K 0x0040DAC0 / K 0x0040DAC4.
+  - Replay: 640 or K 0x0040DADC wide, 480 high.
+  - In-engine sequences (`func_00178DF8`): 640 x 480 or 640 x 360, which is Vert-.
+  - With the setting on, ultrawide uses 640 x window_aspect / (4/3) for every one of these widths, height 480 and the 4:3 distances, so the vertical field of view is always the 4:3 one. Off: the 16:9 values widened by window_aspect / (16/9).

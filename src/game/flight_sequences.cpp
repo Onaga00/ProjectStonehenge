@@ -5,6 +5,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "game/flight_common.h"
 #include "sce/sce.h"
 
@@ -213,6 +214,8 @@ void func_0010D470() {
     GRef<u8>(v + 7) = 0;
     f32 width = 640.0f;
     if ((Ctx()->flags & 0x10000u) != 0) width = F(0x0040DADC);
+    // port: match the live flight cameras when the host presents an ultrawide window.
+    if ((Ctx()->flags & 0x10000u) != 0) width = port::UltrawideProjectionWidth(640.0f, width);
     SetCameraProjection(width, 480.0f, F(0x0040DAE0), 1.0f, F(0x0040DAE4), c0);
     SetCameraViewport(1.0f, F(0x0040DAE8), c0, 0, 0, static_cast<s16>(Ctx()->draw_w), static_cast<s16>(Ctx()->draw_h));
     func_00102838(c1, c0);
