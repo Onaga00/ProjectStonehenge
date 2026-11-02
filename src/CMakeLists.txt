@@ -45,11 +45,13 @@ target_link_libraries(ac04_core PUBLIC ac04_options ac04_json PRIVATE shell32 ol
 
 add_library(ac04_platform STATIC
     platform/audio.cpp
+    platform/controls_file.cpp
     platform/debug/overlay.cpp
     platform/input.cpp
     platform/window.cpp
     platform/render/gs/gs_vulkan.cpp
     platform/render/gs/gs_antialias.cpp
+    platform/render/gpu_profiler.cpp
     platform/render/movie_upscaler.cpp
     platform/render/render_thread.cpp
     platform/render/renderer.cpp

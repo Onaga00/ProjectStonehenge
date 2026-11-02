@@ -27,7 +27,6 @@ TEST_CASE("settings: defaults") {
     CHECK(s.presentation.frame_interpolation);
     CHECK(s.audio.on_focus_loss == FocusLossAudio::KeepPlaying);
     CHECK(s.debug.overlay_toggle == "\\");
-    CHECK(s.input.bindings.at("cross").size() == 2);
     CHECK(s.input.modern_controls[0]);
     CHECK(s.input.modern_controls[1]);
 }
@@ -114,10 +113,10 @@ TEST_CASE("settings: frame interpolation") {
 TEST_CASE("settings: valid values are read") {
     SettingsStore store;
     std::vector<std::string> warnings;
-    CHECK(store.LoadFromText(R"({"version":1,"presentation":{"filter":"smooth","vsync":false,"frame_cap":144,
+    CHECK(store.LoadFromText(R"({"version":2,"presentation":{"filter":"smooth","vsync":false,"frame_cap":144,
         "window_mode":"fullscreen"},"paths":{"iso":"C:\\x.iso"},"audio":{"on_focus_loss":"mute"},
         "debug":{"overlay_enabled":true,"overlay_toggle":"key:F12","fps_overlay":true},
-        "input":{"bindings":{"cross":["key:Space"]},"modern_controls":[false,true]}})",
+        "input":{"modern_controls":[false,true]}})",
                              warnings));
     CHECK(warnings.empty());
     const Settings& s = store.Get();
@@ -130,10 +129,25 @@ TEST_CASE("settings: valid values are read") {
     CHECK(s.debug.overlay_enabled);
     CHECK(s.debug.overlay_toggle == "key:F12");
     CHECK(s.debug.fps_overlay);
-    CHECK(s.input.bindings.at("cross") == std::vector<std::string>{"key:Space"});
-    CHECK(s.input.bindings.at("circle").size() == 2);  // untouched controls keep their default
     CHECK_FALSE(s.input.modern_controls[0]);
     CHECK(s.input.modern_controls[1]);
+}
+
+TEST_CASE("settings: a file of version 1 is incompatible") {
+    // Version 2 (2026-10-31): the bindings moved to controls.ini. A version 1 file is rejected as a
+    // whole (the caller deletes it and writes the defaults), its other values are not kept.
+    SettingsStore store;
+    std::vector<std::string> warnings;
+    CHECK_FALSE(store.LoadFromText(R"({"version":1,"presentation":{"filter":"smooth"},
+        "input":{"bindings":{"cross":["key:Space"]},"modern_controls":[false,true]}})",
+                                   warnings));
+    CHECK_FALSE(warnings.empty());
+    CHECK(store.Get().presentation.filter == ScaleFilter::Sharp);
+    CHECK(store.Get().input.modern_controls[0]);
+    CHECK(nlohmann::json::parse(store.ToText())["version"] == 2);
+    CHECK_FALSE(nlohmann::json::parse(store.ToText())["input"].contains("bindings"));
+    // A version 2 file with bindings is incompatible, like any unknown key.
+    CHECK_FALSE(store.LoadFromText(R"({"version":2,"input":{"bindings":{}}})", warnings));
 }
 
 TEST_CASE("settings: the window mode of earlier builds is still read") {
@@ -148,7 +162,7 @@ TEST_CASE("settings: a file with an invalid value is rejected as a whole") {
     SettingsStore store;
     std::vector<std::string> warnings;
     CHECK_FALSE(store.LoadFromText(R"({"presentation":{"filter":"lanczos","frame_cap":75,"internal_scale":9,
-        "vsync":"yes"},"input":{"bindings":{"turbo":["key:T"]},"modern_controls":[true]},
+        "vsync":"yes"},"input":{"turbo":["key:T"],"modern_controls":[true]},
         "paths":{"iso":"D:\\kept.iso"}})",
                                    warnings));
     CHECK(warnings.size() == 6);
@@ -163,7 +177,7 @@ TEST_CASE("settings: a file with an invalid value is rejected as a whole") {
 
 TEST_CASE("settings: unknown keys and other versions are incompatible") {
     for (const char* text : {R"({"mods":{"x":1}})", R"({"presentation":{"future_option":true}})",
-                             R"({"version":2})", R"({"version":"1"})", R"({"audio":5})"}) {
+                             R"({"version":1})", R"({"version":3})", R"({"version":"2"})", R"({"audio":5})"}) {
         SettingsStore store;
         std::vector<std::string> warnings;
         CHECK_FALSE(store.LoadFromText(text, warnings));

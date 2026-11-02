@@ -219,6 +219,32 @@ std::uint64_t PipelineKey(const BlendState& b, std::uint32_t write_mask) {
            static_cast<std::uint64_t>(write_mask) << 20;
 }
 
+// A draw's full state key (PipelineKey | DepthKey) split into the pipeline it binds and the state
+// set per draw (ADR-009, validation.md §2ao): the game alternates the depth test, the depth write
+// and the alpha write on almost every draw, and a pipeline switch costs GPU time. Depth compare and
+// depth write are dynamic state (VK_EXT_extended_dynamic_state). A blended pipeline always writes
+// A and blends it with the blend constant (srcAlpha CONSTANT_ALPHA, dstAlpha ONE_MINUS_CONSTANT_ALPHA):
+// constant 1 writes As as before (As * 1 + Ad * 0), constant 0 keeps the stored alpha
+// (As * 0 + Ad * 1), as a colour write mask without A did. Unblended pipelines keep A in their mask.
+struct DrawState {
+    std::uint64_t pipeline_key = 0;
+    VkCompareOp depth_op = VK_COMPARE_OP_ALWAYS;
+    bool depth_write = false;
+    float alpha_constant = 1.0f;  // blended pipelines only
+};
+
+DrawState SplitKey(std::uint64_t key) {
+    DrawState s;
+    s.depth_op = static_cast<VkCompareOp>((key >> 24) & 7);
+    s.depth_write = ((key >> 27) & 1) != 0;
+    s.pipeline_key = key & ~(0xFull << 24);
+    if ((key & 1) != 0) {
+        s.alpha_constant = ((key >> 23) & 1) != 0 ? 1.0f : 0.0f;
+        s.pipeline_key |= 1ull << 23;
+    }
+    return s;
+}
+
 // Pipeline stages and accesses of an image in each layout, as this backend uses the layouts: the
 // scope of the barriers that move images between them (GsBackend::Transitions).
 struct LayoutUse {
@@ -1224,7 +1250,7 @@ void GsBackend::Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawC
     r.tbw = static_cast<std::uint32_t>(Bits(d.tex0, 14, 6));
     r.texa = static_cast<std::uint32_t>(Bits(d.texa, 0, 8) | Bits(d.texa, 15, 1) << 15 | Bits(d.texa, 32, 8) << 16);
     r.clut = d.frame_clut.get();
-    ConvertCore(cmd, frame, src, r);
+    if (ConvertCore(cmd, frame, src, r)) Mark(cmd, GpuSection::kConvert);
 }
 
 GsBackend::Target* GsBackend::NewerView(const Target& t) {
@@ -1282,6 +1308,7 @@ void GsBackend::Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer) {
     Transitions(cmd, {{&feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}, {&t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
     // used_height stays the drawn height: it sizes the presented image (ADR-006 Â§4: 448 lines).
     t.last_write = newest->last_write;
+    Mark(cmd, GpuSection::kSync);
 }
 
 void GsBackend::Shutdown() {
@@ -1651,20 +1678,20 @@ VkPipeline GsBackend::CreatePipeline(std::uint64_t key) const {
     cba.srcColorBlendFactor = static_cast<VkBlendFactor>((key >> 1) & 0x7F);
     cba.dstColorBlendFactor = static_cast<VkBlendFactor>((key >> 8) & 0x7F);
     cba.colorBlendOp = static_cast<VkBlendOp>((key >> 15) & 0x1F);
-    cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // the GS writes As unblended
-    cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    // The GS writes As unblended; blended pipelines take A through the blend constant (SplitKey).
+    cba.srcAlphaBlendFactor = cba.blendEnable ? VK_BLEND_FACTOR_CONSTANT_ALPHA : VK_BLEND_FACTOR_ONE;
+    cba.dstAlphaBlendFactor = cba.blendEnable ? VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA : VK_BLEND_FACTOR_ZERO;
     cba.alphaBlendOp = VK_BLEND_OP_ADD;
     cba.colorWriteMask = static_cast<VkColorComponentFlags>((key >> 20) & 0xF);
     VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     cb.attachmentCount = 1;
     cb.pAttachments = &cba;
     VkPipelineDepthStencilStateCreateInfo dss{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    dss.depthTestEnable = VK_TRUE;
-    dss.depthCompareOp = static_cast<VkCompareOp>((key >> 24) & 7);
-    dss.depthWriteEnable = ((key >> 27) & 1) != 0 ? VK_TRUE : VK_FALSE;
-    VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    dss.depthTestEnable = VK_TRUE;  // compare op and depth write: dynamic (SplitKey)
+    VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT,
+                            VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT, VK_DYNAMIC_STATE_BLEND_CONSTANTS};
     VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    ds.dynamicStateCount = 2;
+    ds.dynamicStateCount = static_cast<uint32_t>(std::size(dyn));
     ds.pDynamicStates = dyn;
     VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     gpi.stageCount = 2;
@@ -1699,10 +1726,10 @@ void GsBackend::StartPipelineWarmUp() {
             for (;;) {
                 const std::size_t next = warm_next_++;
                 if (warm_stop_ || next >= std::size(kGsPipelineKeys)) break;
-                const std::uint64_t key = kGsPipelineKeys[next];
+                const std::uint64_t key = SplitKey(kGsPipelineKeys[next]).pipeline_key;
                 {
                     std::lock_guard<std::mutex> lock(pipelines_mutex_);
-                    if (pipelines_.count(key) != 0) continue;
+                    if (pipelines_.count(key) != 0 || warming_.count(key) != 0) continue;
                     warming_.insert(key);
                 }
                 const VkPipeline p = CreatePipeline(key);
@@ -1716,8 +1743,12 @@ void GsBackend::StartPipelineWarmUp() {
             }
             if (--warm_running_ == 0 && !warm_stop_) {
                 const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - warm_start_).count();
-                AC04_LOG_INFO("renderer", "GS pipelines prepared at startup: %zu in %.0f ms",
-                              std::size(kGsPipelineKeys), ms);
+                std::size_t built = 0;
+                {
+                    std::lock_guard<std::mutex> lock(pipelines_mutex_);
+                    built = pipelines_.size();
+                }
+                AC04_LOG_INFO("renderer", "GS pipelines prepared at startup: %zu in %.0f ms", built, ms);
             }
         });
     }
@@ -1744,6 +1775,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
     // it, in stream order (also without draws: the copy must follow every op), and the textures
     // decoded on the CPU uploaded.
     RecordTextureWork(cmd, frame, draws, ops);
+    Mark(cmd, GpuSection::kTextureWork);
     if (draws.empty()) return;
 
     // 2. Vertices (sprites, lines and points become two triangles).
@@ -1979,6 +2011,12 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
     VkRect2D bound_scissor{{-1, -1}, {0, 0}};
     Params bound_params{};
     bool params_valid = false;
+    // Dynamic depth state and blend constant (SplitKey), set again after every pass break (other
+    // pipelines may have been bound in between).
+    bool dynamic_valid = false;
+    VkCompareOp bound_depth_op = VK_COMPARE_OP_ALWAYS;
+    bool bound_depth_write = false;
+    float bound_alpha_constant = 1.0f;
     VkDescriptorSet bound_texture = VK_NULL_HANDLE;  // set 1
     // The pipeline of the last key: consecutive draws mostly share one, and GetPipeline locks and
     // looks it up in the map.
@@ -1991,8 +2029,12 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
         }
         return last_pipeline;
     };
-    auto end_pass = [&]() {
-        if (open) vkCmdEndRenderPass(cmd);
+    std::uint32_t pass_draws = 0;  // draw calls of the open pass (GPU profile)
+    auto end_pass = [&](GpuSection section = GpuSection::kDraws) {
+        if (open) {
+            vkCmdEndRenderPass(cmd);
+            Mark(cmd, section, open->fbp | open->fbw << 9 | open->psm << 15, pass_draws);
+        }
         open = nullptr;
     };
     auto begin_pass = [&](Target* target) {
@@ -2006,9 +2048,11 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
         vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
         ++pass_stats_.render_passes;
         open = target;
+        pass_draws = 0;
         bound_pipeline = VK_NULL_HANDLE;
         bound_scissor = VkRect2D{{-1, -1}, {0, 0}};
         params_valid = false;
+        dynamic_valid = false;
         VkViewport vpt{0.0f, 0.0f, static_cast<float>(target->img.width), static_cast<float>(target->img.height), 0.0f, 1.0f};
         vkCmdSetViewport(cmd, 0, 1, &vpt);
         VkDeviceSize offset = 0;
@@ -2031,6 +2075,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
                 if (it != targets_.end()) {
                     end_pass();
                     ApplyAntiAlias(cmd, it->second, d);
+                    Mark(cmd, GpuSection::kAntiAlias);
                 }
             }
             continue;
@@ -2120,8 +2165,10 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
             vkCmdPushConstants(cmd, depth_copy_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                sizeof(pc), &pc);
             vkCmdDraw(cmd, static_cast<uint32_t>(ranges[i].second), 1, static_cast<uint32_t>(ranges[i].first), 0);
+            ++pass_draws;
+            ++pass_stats_.draws;
             // The main pipeline layout is bound again by the next pass.
-            end_pass();
+            end_pass(GpuSection::kDepthCopy);
             Transition(cmd, src->depth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
             continue;
         }
@@ -2219,6 +2266,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
                     Transitions(cmd, {{&feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                       {&present_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
                                       {&target->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
+                    Mark(cmd, copy ? GpuSection::kFrameTexture : GpuSection::kField);
                 }
             }
         }
@@ -2259,6 +2307,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
                 CountCopy(kCopyPalette, 16, 16);
                 Transitions(cmd, {{&clut_img_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                   {&target->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
+                Mark(cmd, GpuSection::kPalette);
                 frame_clut_ready = true;
             } else {
                 LogOnce("clut-frame", "palette drawn on the GPU without a 32-bit frame buffer at its CBP (drawn with indices)");
@@ -2308,6 +2357,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
             CountCopy(kCopyDstRegion, c.extent.width, c.extent.height);
             Transitions(cmd, {{&date_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                               {&target->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
+            Mark(cmd, GpuSection::kDstRegion);
             begin_pass(target);
         }
         VkRect2D sc{{sx0 * ts, sy0 * ts}, {static_cast<uint32_t>((sx1 - sx0) * ts), static_cast<uint32_t>((sy1 - sy0) * ts)}};
@@ -2422,13 +2472,33 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
         p.fix = static_cast<float>(Bits(d.alpha, 32, 8));
         p.flags = flags;
         const std::uint64_t depth = DepthKey(d.test, d.zbuf);
-        auto bind = [&](VkPipeline pl) {
+        auto bind = [&](std::uint64_t full_key) {
+            const DrawState st = SplitKey(full_key);
+            const VkPipeline pl = pipeline(st.pipeline_key);
+            if (!dynamic_valid || st.depth_op != bound_depth_op) {
+                vkCmdSetDepthCompareOpEXT(cmd, st.depth_op);
+                bound_depth_op = st.depth_op;
+                ++pass_stats_.depth_state_sets;
+            }
+            if (!dynamic_valid || st.depth_write != bound_depth_write) {
+                vkCmdSetDepthWriteEnableEXT(cmd, st.depth_write ? VK_TRUE : VK_FALSE);
+                bound_depth_write = st.depth_write;
+                ++pass_stats_.depth_state_sets;
+            }
+            if (!dynamic_valid || st.alpha_constant != bound_alpha_constant) {
+                const float c[4] = {0.0f, 0.0f, 0.0f, st.alpha_constant};
+                vkCmdSetBlendConstants(cmd, c);
+                bound_alpha_constant = st.alpha_constant;
+            }
+            dynamic_valid = true;
             if (pl != bound_pipeline) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pl);
                 bound_pipeline = pl;
+                ++pass_stats_.pipeline_binds;
             }
             if (!params_valid || std::memcmp(&p, &bound_params, sizeof(p)) != 0) {
                 vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(p), &p);
+                ++pass_stats_.push_constants;
                 bound_params = p;
                 params_valid = true;
             }
@@ -2436,13 +2506,18 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
         if (texture_set && texture_set != bound_texture) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 1, 1, &texture_set, 0, nullptr);
             bound_texture = texture_set;
+            ++pass_stats_.texture_binds;
         }
-        bind(pipeline(PipelineKey(blend, write) | depth));
+        bind(PipelineKey(blend, write) | depth);
         vkCmdDraw(cmd, static_cast<uint32_t>(ranges[i].second), 1, static_cast<uint32_t>(ranges[i].first), 0);
+        ++pass_draws;
+        ++pass_stats_.draws;
         if ((flags & (1 << 6)) != 0 && afail == 3 && (write & 7) != 0) {
             p.flags = flags | 1 << 19;  // keep only the pixels that fail the test
-            bind(pipeline(PipelineKey(blend, write & 7) | depth));
+            bind(PipelineKey(blend, write & 7) | depth);
             vkCmdDraw(cmd, static_cast<uint32_t>(ranges[i].second), 1, static_cast<uint32_t>(ranges[i].first), 0);
+            ++pass_draws;
+            ++pass_stats_.draws;
         }
     }
     end_pass();

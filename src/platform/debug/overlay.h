@@ -4,9 +4,11 @@
 // Performance panel: frame rate and frame time in small text at the top right of the window),
 // opened and closed with the toggle character ("\" by default, or "key:<SDL scancode name>").
 //
-// Panels (all read-only, "Sim: no"): performance and frame timing, scene inspector with the
+// Panels ("Sim: no"): performance and frame timing, scene inspector with the
 // RequestScene/RequestSubState log, memory viewer at PS2 addresses with docs/symbols.csv names,
-// live session log.
+// live session log, input viewer (host pads, pressures, the game's pad type), all read-only; and
+// Graphics, which changes the presentation settings that apply while the port runs (presentation
+// only, never game state; the host applies the request after the frame is built).
 //
 // Drawn by the output pass after the 4:3 game image, at host resolution, into the swapchain image
 // (Renderer overlay hook). Guest memory is read only while the game thread is parked (ADR-002).
@@ -14,10 +16,12 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "common/types.h"
+#include "platform/input.h"
 #include "platform/settings.h"
 
 union SDL_Event;
@@ -44,6 +48,16 @@ struct OverlayFrameData {
     u64 gif_sends = 0, vif1_sends = 0;    // all time
     u64 bad_chains = 0;
     std::array<u64, 5> dispenv{};          // PMODE, SMODE2, DISPFB, DISPLAY, BGCOLOR
+    PresentationSettings presentation;     // in force this session (the Graphics panel edits a copy)
+    std::array<PadState, 2> pads{};        // live host input per port (input backend)
+    std::array<PadDeviceInfo, 2> pad_devices{};
+};
+
+// A change from the Graphics panel: the new presentation values, applied at once by the host;
+// `save` also writes them to settings.json.
+struct PresentationRequest {
+    PresentationSettings values;
+    bool save = false;
 };
 
 class DebugOverlay {
@@ -65,6 +79,8 @@ public:
 
     // Builds the UI for this frame; call before Renderer::DrawFrame.
     void BuildFrame(const OverlayFrameData& data);
+    // The Graphics panel's change in the frame just built, if any (taken once).
+    std::optional<PresentationRequest> TakePresentationRequest();
 
     bool Active() const { return active_; }
     bool Visible() const { return active_ && visible_; }
@@ -79,6 +95,8 @@ private:
     void DrawScene();
     void DrawMemory();
     void DrawLog();
+    void DrawGraphics(const OverlayFrameData& data);
+    void DrawInput(const OverlayFrameData& data);
     void LoadSymbols();
 
     struct Symbol {
@@ -100,6 +118,8 @@ private:
     void* last_render_pass_ = nullptr;
 
     bool show_perf_ = true, show_scene_ = true, show_memory_ = false, show_log_ = false;
+    bool show_graphics_ = false, show_input_ = false;
+    std::optional<PresentationRequest> presentation_request_;
     std::array<float, 240> frame_ms_{};
     size_t frame_ms_pos_ = 0;
 

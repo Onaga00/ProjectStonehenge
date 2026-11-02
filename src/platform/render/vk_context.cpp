@@ -133,8 +133,9 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
         return false;
     }
 
-    // Pick a device: Vulkan 1.2, a queue family with graphics + present, swapchain extension.
-    // Discrete GPUs are preferred.
+    // Pick a device: Vulkan 1.2, a queue family with graphics + present, the swapchain extension and
+    // VK_EXT_extended_dynamic_state (depth test and depth write set per draw: the GS draws switch
+    // them on almost every draw, validation.md §2ao; ADR-009). Discrete GPUs are preferred.
     uint32_t count = 0;
     vkEnumeratePhysicalDevices(instance, &count, nullptr);
     std::vector<VkPhysicalDevice> devices(count);
@@ -152,6 +153,15 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
             return std::strcmp(e.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0;
         });
         if (!has_swapchain) continue;
+        const bool has_dynamic_state = std::any_of(exts.begin(), exts.end(), [](const VkExtensionProperties& e) {
+            return std::strcmp(e.extensionName, VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME) == 0;
+        });
+        if (!has_dynamic_state) continue;
+        VkPhysicalDeviceExtendedDynamicStateFeaturesEXT eds{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
+        VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        f2.pNext = &eds;
+        vkGetPhysicalDeviceFeatures2(pd, &f2);
+        if (!eds.extendedDynamicState) continue;
         uint32_t qcount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(pd, &qcount, nullptr);
         std::vector<VkQueueFamilyProperties> qprops(qcount);
@@ -170,7 +180,8 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
         }
     }
     if (!physical_device) {
-        error = "No GPU with Vulkan 1.2, graphics and presentation support was found. Update the GPU driver.";
+        error = "No GPU with Vulkan 1.2 and VK_EXT_extended_dynamic_state, graphics and presentation support was found. "
+                "Update the GPU driver.";
         return false;
     }
 
@@ -192,11 +203,14 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
     qci.queueFamilyIndex = queue_family;
     qci.queueCount = 1;
     qci.pQueuePriorities = &priority;
-    const char* device_exts[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char* device_exts[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME};
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT eds{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
+    eds.extendedDynamicState = VK_TRUE;
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    dci.pNext = &eds;
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.enabledExtensionCount = 1;
+    dci.enabledExtensionCount = 2;
     dci.ppEnabledExtensionNames = device_exts;
     // Dual-source blending: the GS blend equation needs the blend factor separate from the alpha
     // written to the frame buffer (src/platform/render/gs/gs_vulkan.cpp).

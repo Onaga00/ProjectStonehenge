@@ -84,6 +84,8 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
     if (!CreatePipeline(error)) return false;
     // GS renderer (ADR-003): draws the game's GS packets; until the first frame the test pattern shows.
     std::string gs_error;
+    gpu_profiler_.Init(ctx_, kFramesInFlight, gpu_profile_);
+    gs_backend_.SetProfiler(&gpu_profiler_);
     gs_ready_ = gs_backend_.Init(ctx_, gs_error);
     if (!gs_ready_) AC04_LOG_ERROR("renderer", "GS renderer unavailable: %s", gs_error.c_str());
     gs_backend_.SetScale(internal_scale_);
@@ -578,6 +580,7 @@ bool Renderer::DrawFrame() {
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &bi);
+    gpu_profiler_.BeginFrame(cmd, frame_);
 
     // Movie upscaling stage (ADR-006 §5): once per new picture, only above 1x. At internal scale
     // N > 1 the GS backend samples its output for draws whose texture came from the movie image
@@ -585,6 +588,7 @@ bool Renderer::DrawFrame() {
     if (movie_upscaler_ready_ && movie_factor_ > 1 && movie_serial_ != movie_done_serial_ && !movie_rgba_.empty()) {
         if (movie_upscaler_->Upscale(cmd, frame_, movie_rgba_, movie_width_, movie_height_, movie_factor_))
             movie_done_serial_ = movie_serial_;
+        gpu_profiler_.Mark(cmd, GpuSection::kMovie);
     }
     {
         // At internal scale > 1 the GS draws from the movie image buffer sample the upscaled picture.
@@ -600,7 +604,8 @@ bool Renderer::DrawFrame() {
         gs_backend_.SetMovieSource(ms);
     }
 
-    if (gs_ready_ && (!gs_pending_.empty() || !gs_ops_.empty())) {
+    const bool drawn = gs_ready_ && (!gs_pending_.empty() || !gs_ops_.empty());
+    if (drawn) {
         const auto start = std::chrono::steady_clock::now();
         gs_backend_.Record(cmd, frame_, gs_pending_, gs_ops_);
         gs_pending_.clear();
@@ -624,10 +629,16 @@ bool Renderer::DrawFrame() {
             native_request_h_ = h;
             gs_backend_.CopyPresent(cmd, native_image_, native_width_, native_height_);
             gs_backend_.PresentScale(present_scale_);
+            gpu_profiler_.Mark(cmd, GpuSection::kPresentCopy);
         }
         last_stats_.passes = gs_backend_.LastPassStats();  // after CopyPresent: its barriers count too
         stat_render_passes_ += last_stats_.passes.render_passes;
         stat_barriers_ += last_stats_.passes.barriers;
+        stat_draws_ += last_stats_.passes.draws;
+        stat_pipeline_binds_ += last_stats_.passes.pipeline_binds;
+        stat_push_constants_ += last_stats_.passes.push_constants;
+        stat_texture_binds_ += last_stats_.passes.texture_binds;
+        stat_depth_state_sets_ += last_stats_.passes.depth_state_sets;
         stat_copies_ += last_stats_.passes.copies;
         stat_copy_pixels_ += last_stats_.passes.copy_pixels;
         for (std::size_t k = 0; k < stat_kind_copies_.size(); ++k) {
@@ -675,6 +686,7 @@ bool Renderer::DrawFrame() {
         overlay_hook_(cmd);
     }
     vkCmdEndRenderPass(cmd);
+    gpu_profiler_.EndFrame(cmd, GpuSection::kOutput, drawn);
     vkEndCommandBuffer(cmd);
 
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -706,6 +718,49 @@ bool Renderer::DrawFrame() {
     return true;
 }
 
+void Renderer::LogGpuTime() const {
+    const GpuProfiler::Totals& t = gpu_profiler_.Session();
+    if (t.frames == 0) return;
+    const double n = static_cast<double>(std::max<std::uint64_t>(t.drawn_frames, 1));
+    AC04_LOG_INFO("renderer",
+                  "GPU time per frame (timestamps): %.2f ms on average over %llu frames with GS draws (%.2f ms over all "
+                  "%llu presented), slowest %.2f ms",
+                  t.drawn_ms / n, static_cast<unsigned long long>(t.drawn_frames),
+                  t.total_ms / static_cast<double>(t.frames), static_cast<unsigned long long>(t.frames), t.max_ms);
+    if (!gpu_profiler_.Detailed() || t.drawn_frames == 0) return;
+    // Sections by time, largest first: ms per frame (sections per frame).
+    std::array<std::size_t, static_cast<std::size_t>(GpuSection::kCount)> order{};
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return t.ms[a] > t.ms[b]; });
+    std::string parts;
+    for (std::size_t k : order) {
+        if (t.count[k] == 0) continue;
+        char part[112];
+        std::snprintf(part, sizeof(part), "%s%s %.2f ms (%.1f)", parts.empty() ? "" : ", ",
+                      GpuProfiler::Name(static_cast<GpuSection>(k)), t.ms[k] / n, static_cast<double>(t.count[k]) / n);
+        parts += part;
+    }
+    AC04_LOG_INFO("renderer", "GPU time per frame with GS draws by section (ms, sections per frame): %s", parts.c_str());
+    // The draws by target, largest first (at most 8): FBP, FBW, layout; ms, passes and draw calls per frame.
+    std::vector<std::pair<std::uint32_t, GpuProfiler::Totals::Passes>> targets(t.draws_by_target.begin(), t.draws_by_target.end());
+    std::sort(targets.begin(), targets.end(), [](const auto& a, const auto& b) { return a.second.ms > b.second.ms; });
+    std::string by_target;
+    for (std::size_t i = 0; i < targets.size() && i < 8; ++i) {
+        const std::uint32_t tag = targets[i].first;
+        const std::uint32_t psm = tag >> 15;
+        char part[128];
+        std::snprintf(part, sizeof(part), "%sFBP 0x%X FBW %u %s %.2f ms (%.1f passes, %.1f draws)", by_target.empty() ? "" : ", ",
+                      tag & 0x1FF, (tag >> 9) & 0x3F, psm == 0 ? "32-bit" : psm == 0x2 ? "CT16" : psm == 0xA ? "CT16S" : "16-bit",
+                      targets[i].second.ms / n, static_cast<double>(targets[i].second.passes) / n,
+                      static_cast<double>(targets[i].second.draws) / n);
+        by_target += part;
+    }
+    if (!by_target.empty()) AC04_LOG_INFO("renderer", "GPU time of the draws by target (per frame with GS draws): %s", by_target.c_str());
+    if (t.dropped_marks > 0)
+        AC04_LOG_WARN("renderer", "GPU profile: %llu section marks over the per-frame budget (counted in the next section)",
+                      static_cast<unsigned long long>(t.dropped_marks));
+}
+
 void Renderer::Shutdown() {
     if (!ctx_.device) return;
     if (stat_frames_ > 0) {
@@ -723,6 +778,12 @@ void Renderer::Shutdown() {
                       "copies (%.2f Mpixels)",
                       static_cast<double>(stat_render_passes_) / n, static_cast<double>(stat_barriers_) / n,
                       static_cast<double>(stat_copies_) / n, static_cast<double>(stat_copy_pixels_) / n / 1e6);
+        AC04_LOG_INFO("renderer",
+                      "draw state per frame on average: %.1f draw calls, %.1f pipeline binds, %.1f depth state changes, "
+                      "%.1f parameter updates, %.1f texture binds",
+                      static_cast<double>(stat_draws_) / n, static_cast<double>(stat_pipeline_binds_) / n,
+                      static_cast<double>(stat_depth_state_sets_) / n, static_cast<double>(stat_push_constants_) / n,
+                      static_cast<double>(stat_texture_binds_) / n);
         std::string kinds;
         for (std::size_t k = 0; k < stat_kind_copies_.size(); ++k) {
             if (stat_kind_copies_[k] == 0) continue;
@@ -748,6 +809,9 @@ void Renderer::Shutdown() {
         else AC04_LOG_WARN("renderer", "texture decode check: %llu of %llu GPU decodes differ from the CPU decode", bad, all);
     }
     vkDeviceWaitIdle(ctx_.device);
+    gpu_profiler_.CollectAll();
+    LogGpuTime();
+    gpu_profiler_.Shutdown();
     DestroySwapchainResources();
     if (movie_upscaler_) movie_upscaler_->Shutdown();
     movie_upscaler_ready_ = false;

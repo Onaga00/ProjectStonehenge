@@ -6,6 +6,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "game/flight_common.h"
 #include "sce/sce.h"
 
@@ -294,6 +295,7 @@ void UpdatePlayerAircraft(s32 p) {
 // Pad state -> flight inputs of player p (inventory note).
 // fpucheck: 4 adds (throttle x2, yaw x2, tutorial y - h, y - 5)
 void ReadPlayerControls(s32 p) {
+    if (static_cast<u32>(p) < 2) port::Input().in_flight[p] = true;  // port: the mouse steers only in flight
     const u32 u = Unit(p);
     const u32 P = W(u + 0x44);
     const u32 pe = PadExt(p);

@@ -7,17 +7,34 @@
 
 namespace ac04::platform {
 
+namespace {
+
+// Restores the scheduler granularity at exit (pairs with timeBeginPeriod).
+struct TimerPeriod {
+    TimerPeriod() { timeBeginPeriod(1); }
+    ~TimerPeriod() { timeEndPeriod(1); }
+};
+
+// One high-resolution waitable timer per thread, closed when the thread ends.
+struct ThreadTimer {
+    HANDLE handle = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    ~ThreadTimer() {
+        if (handle) CloseHandle(handle);
+    }
+};
+
+}  // namespace
+
 void InitTimerResolution() {
     // 1 ms scheduler granularity for the coarse part of the wait.
-    timeBeginPeriod(1);
+    static TimerPeriod period;
 }
 
 void PreciseSleepUntil(FramePacer::Clock::time_point deadline) {
     using namespace std::chrono;
     // High-resolution waitable timer for all but the last ~1 ms, then yield-spin.
-    static thread_local HANDLE timer =
-        CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-                               TIMER_ALL_ACCESS);
+    static thread_local ThreadTimer thread_timer;
+    const HANDLE timer = thread_timer.handle;
     for (;;) {
         const auto remaining = deadline - FramePacer::Clock::now();
         if (remaining <= 0ns) return;

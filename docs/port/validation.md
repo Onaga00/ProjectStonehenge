@@ -35,6 +35,9 @@ Every validation run of the project, newest last. How slices are validated: `val
 | §2al | GPU work structure: counters, narrow barriers, partial frame-buffer copies (2026-10-26; GW-1 to GW-3) |
 | §2am | GS processing: one vertex buffer per draw list, pipeline reuse, blended copies replayed (2026-10-27; GP-1 to GP-4) |
 | §2an | terrain cells black or patched with other tiles up close: mirrored tiles flipped through a GPU-only sprite; warning for other reads of GPU-only drawings (2026-10-27; TT-1, TT-2) |
+| §2ao | GPU time per section (timestamps, `--gpu-profile`), draw-state counters; the flight passes alternate depth and alpha state on almost every draw; ADR-009 (`VK_EXT_extended_dynamic_state`, shared pipelines) and why it gains little on AMD (2026-10-30; GT-1 to GT-6) |
+| §2ap | Host memory leak scan: code review of allocations and Vulkan/SDL/Win32 objects, memory sampling of long runs; one MPEG-2 decoder kept per movie (fixed), the timer handle and period (fixed); guest RAM unchanged (2026-11-01; ML-1 to ML-3) |
+| §2aq | Hangar aircraft and weapons tinted teal (player report, NVIDIA, 0.9.5/0.9.6): the light-map pass, not reproduced on AMD with the player's save; GPU decode check; one `VK_ERROR_DEVICE_LOST` under `--vk-validation` (2026-11-02; HT-1 to HT-4) |
 | §2o | new memory card and first save, startup messages (2026-10-20; NS-1, NS-2) |
 | §2n | anti-aliasing (FXAA, SMAA) before the HUD (2026-10-20; AA-1 to AA-4) |
 | §2m | settings tests (GRAPHICS page, live combinations, controller and save round trip), texture residency, sprite edges at N×, defaults and the frame-rate overlay (2026-10-20; ST-1 to ST-8) |
@@ -1440,3 +1443,102 @@ User report (mission 6, also other missions, present in earlier versions): whole
 - A local→local transfer whose source touches such a page logs once `renderer: local->local transfer reads a frame buffer drawn on the GPU only (source block …, PSM …): it copies stale bytes`; a CLUT load from such a page (other than the palette drawn on the GPU, §2z) logs once `CLUT loaded from a frame buffer drawn on the GPU only …`. Counted in `GsState::GpuOnlyReads`. The picture is unchanged.
 - Test: the texel-copy test also draws the sprite with blending (not a plain copy): the transfer that reads it back is counted; after an upload into the page it is not.
 - Runs: the mission 6 replay (to vblank 10446), the mission 1 input log and all 30 jobs of `full.json` (run `sn1`, against `tf1`): no such warning. `sn1`: all jobs exit cleanly, 108 of 110 files identical, `m3_route` / `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). Development tests pass.
+
+## 2ao. GPU time per section: the pipeline switches of the flight passes (2026-10-30)
+
+Player report (0.9.6 release, GTX 1050, 1920 × 1080 at 75 Hz, 2×, FXAA, v-sync, interpolation on): 41.5 fps, 14.25 ms per frame waiting for the GPU, 115 render passes, 320 barriers and 130 copies per frame; slow at 1× too. User request: GPU instrumentation that costs no noticeable performance, test runs, find the bottleneck. GRAPHICS page INTERPOLATION row: `port-features.md` §3.
+
+### GT-1. Instrumentation (`src/platform/render/gpu_profiler.*`, `renderer.md` §3)
+- Always: two timestamps per frame; exit log `renderer: GPU time per frame (timestamps): … ms on average over N frames with GS draws (… over all … presented), slowest … ms`.
+- `--gpu-profile` (all builds): a bottom-of-pipe timestamp at the end of each section (texture work, each GS render pass, frame as texture, field copy, DATE / shader-blend region, GPU palette, view sync, conversion, depth copy, anti-aliasing, present copy, movie upscaling, output pass). A section's time is from the previous timestamp to its own, so the stall of the barrier in front of a copy counts for the copy. Results are read after the frame's fence (no wait). Exit log: the sections by time, and the draws by target (FBP, FBW, layout; passes and draw calls per frame).
+- Draw-state counters (always, CPU side): `renderer: draw state per frame on average: … draw calls, … pipeline binds, … parameter updates, … texture binds`.
+- Cost (mission 1 benchmark, 1×, RX 9070 XT, `out/bench/run.sh`): 341.5 fps without `--gpu-profile`, 340.6 fps with it; recording 1.43 → 1.52 ms per frame.
+
+### GT-2. Where the GPU time goes (RX 9070 XT, development build, windowed, v-sync off, cap 360, no interpolation, no anti-aliasing; per frame with GS draws)
+
+| Run | GPU total | draws | conversions | view syncs | texture work | frame as texture | rest |
+|---|---|---|---|---|---|---|---|
+| mission 1 log, 1× | 2.06 ms | 1.41 ms (56 passes) | 0.41 ms (11) | 0.08 ms (14.2) | 0.08 ms | 0.05 ms (22.5) | 0.03 ms |
+| mission 1 log, 2× | 2.31 ms | 1.64 ms | 0.41 ms | 0.08 ms | 0.08 ms | 0.06 ms | 0.04 ms |
+| mission 6 route (`out/bench/m6.sh`), 1× | 1.35 ms | 0.90 ms (36.7) | 0.24 ms (6.6) | 0.07 ms (9.6) | 0.08 ms | 0.04 ms (13.1) | 0.02 ms |
+
+- 1× → 2× adds 0.25 ms: the GPU work is not bound by pixels. The copies and barriers of §2al are no longer the main cost (all copies together about 0.15 ms); conversions are the second cost (about 37 µs each).
+- Draws by target (mission 1, 1×): the flight frame buffer (FBP 0x0, FBW 8) takes 1.25 of the 1.43 ms, with 1,206 draw calls in 17.7 passes per frame; every off-screen target (glow, shadow chains) 0.01–0.04 ms.
+- Draw state (mission 1, 1×): 1,251 draw calls, **1,070 pipeline binds**, 1,247 parameter updates (push constants), 150 texture binds per frame, with only 36 pipelines in use.
+
+### GT-3. The pipeline switches (temporary probe, removed)
+- Of 2.89 M pipeline binds (mission 1 to vblank 4000), 2.72 M (94 %) alternate between two keys with the same blend: `0x0670101F` (RGB written, depth GEQUAL, no depth write) and `0x0CF0101F` (RGBA, depth GREATER, depth write). The colour mask changed in 95 % of the binds, the depth test in 94 %, the depth write in 94 %, the blend in 3 %. This is the game's draw order (a pass that writes depth, then one drawn over it with GEQUAL without depth write, alternating per object or terrain cell); the draws overlap, so they cannot be reordered.
+- Timing experiment (wrong pictures, timing only): both keys drawn with `0x06F0101F` (RGBA, GEQUAL, no depth write; about the same pixel work): pipeline binds 1,070 → 72 per frame, **draws 1.43 → 0.34 ms, frame GPU time 2.08 → 1.01 ms**. With `0x0CF0101F` for both (fewer pixels pass): the same 0.35 ms. So the cost is the switch itself, about 1 µs of GPU time per switch on this GPU.
+- Not measured on NVIDIA. GPUs and drivers of the GTX 1050's generation are known to handle pipeline state changes worse; with the player's session (115 passes per frame on average, and the hangar records about 4,000 draws per frame, §2am) the switches are the most likely cause of the 14 ms. To confirm: the player's log with `--gpu-profile` (GT-4).
+
+### GT-4. Fix: VK_EXT_extended_dynamic_state, shared pipelines (ADR-009, User decision 2026-10-30)
+- Hardware check (gpuinfo.org, Windows): no GPU usable with Windows 10/11 and a current driver lacks the extension (ADR-009). Required, no second path; a GPU without it is skipped at device selection, and the startup message asks for a driver from 2021 or later.
+- Depth compare op and depth write are dynamic state, set only when they change; blended pipelines write A through the blend constant (1 writes As, 0 keeps Ad); unblended pipelines keep A in their mask (`gs_vulkan.cpp` `SplitKey`). The warm-up builds the reduced keys of `gs_pipeline_keys.h`, each once.
+- Mission 1 benchmark, 1×, `--gpu-profile`: pipeline binds 1,069.9 → 69.5 per frame (2,115.7 depth state changes), pipelines in use 36 → 11 (11 prepared at startup in 373 ms); draws 1.43 → 1.33 ms, frame GPU time 2.08 → 1.99 ms; 342.7 fps (CPU-bound render thread, as before).
+- Vulkan validation with synchronisation validation (`VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1`), mission 1 at 4× with SMAA to vblank 2600: 0 messages.
+- Regression (`tools/research/full.json`, 30 jobs) against baselines of the build without the fix (`out/exe_before`, same sources with the old `gs_vulkan.cpp`; baselines `out/runs/eds_base1`, `eds_base4`; runs `eds1`, `eds4`, not committed): all 30 jobs exit cleanly at 1× and 4×; **every RAM checkpoint identical**. Screenshots: at 1× 29 of 30 jobs identical, `m4_route` 5300 differs only in column x = 409 (400 pixels: the loading-fade column, IR-1); at 4× 28 of 30 identical, `opening` 1800 (known: host timing with `--fast-until`) and `s4_frontend` 11950, which differs only in the bottom row y = 447 by at most 1 (223 pixels). The build without the fix run again against its own baseline gives the same `s4_frontend` 11950 difference (row 447, 414 pixels, at most 1): host-timing flake, not the fix. So the pictures are unchanged by the fix.
+- `ctest --preset dev`: passes.
+
+### GT-5. Why the gain is small on this GPU (temporary probe, removed; pictures wrong, timing only)
+Each alternating state frozen in turn (mission 1 to vblank 5000, draws' GPU time per frame with GS draws; 1.32 ms with nothing frozen):
+
+| Frozen | draws |
+|---|---|
+| depth compare op | 1.32 ms |
+| depth write | 0.98 ms |
+| alpha blend constant | 1.32 ms |
+| compare op + depth write | 0.97 ms |
+| depth write + alpha constant | 0.97 ms |
+| compare op + alpha constant | 1.32 ms |
+| all three | 0.31 ms |
+
+- On the RX 9070 XT any state change between draws costs about 0.6 µs, whether it is a pipeline switch or dynamic state; a change of the depth write costs about 0.35 ms per frame more. The 0.34 ms of GT-3 came from removing the alternation itself, which the game's draws need (the overlapping passes really use different depth and alpha states). So ADR-009 removes the pipeline switches but not this cost on AMD. On NVIDIA dynamic state is expected to be cheaper than a pipeline switch; not measured.
+
+### GT-6. Pending
+- Player check: the next build, `--gpu-profile`, 1×, interpolation and anti-aliasing off, one mission and some time in the hangar; send `logs\session.log` (lines `GPU time …`, `draw state …`).
+- Next candidate: conversions (0.41 ms per frame in mission 1): cache while the source is unchanged.
+
+## 2ap. Host memory leak scan (2026-11-01)
+
+User request: build the development build and scan the code for memory leaks.
+
+### ML-1. Code review
+- Host allocations: the only raw `new` are guest RAM and the scratchpad (`common/guest_memory.cpp`), owned by `unique_ptr`. Every `std::thread` is joined.
+- Vulkan, SDL and Win32 objects: every create has its destroy (`gs_vulkan.cpp`, `gs_antialias.cpp`, `movie_upscaler.cpp`, `renderer.cpp`, `vk_context.cpp` with the surface, `gpu_profiler.cpp`, audio stream, gamepads, window, ISO file handle). Per-frame lists (`retired_`, `retired_fb_`) are emptied when their frame comes round again.
+- Bounded caches: CPU texture cache 256 MiB (`GsState::kTextureCacheBytes`, cleared above 4,096 entries), free GPU textures trimmed to `kFreeTextureBytes`, upload map cleared above 4,096 entries; the page maps (`fb_pages_`, `fb_written_bits_`, `zbuf_owner_`) are keyed by the 9-bit FBP (at most 512 entries).
+- Guest memory: the work heap is the game's bump allocator with marks and rewinds (as on the PS2); the guest `malloc`/`free` (`sce/libc.cpp`) merges freed blocks.
+- Found:
+  1. `sce/libmpeg.cpp`: the game never calls `sceMpegDelete`; a decoder was closed only by a later `sceMpegCreate` at the same `mp`. `mp` is inside the 6 MiB movie work block, whose address depends on the work heap at movie start, so each address kept a `mpeg2dec_t` (with its picture buffers) for the rest of the session. Seen in the ML-3 run: three 6 MiB movie blocks, all from the same caller (image offset 0x16EDC8), at vblanks 1738 (SS01), 10438 and 14070, at 0x00CD4A40, 0x00CD4240 and 0x00CE9D80 (`--log-allocs`); which movies the last two are was not checked.
+  2. `platform/win32/timer_win32.cpp`: the per-thread waitable timer was never closed, and `timeBeginPeriod(1)` had no `timeEndPeriod`. Both are released at process exit, so only untidy.
+
+### ML-2. Fixes
+- `sceMpegCreate` closes every earlier decoder before creating the new one: one SMV reader and one IPU, so one decoder is active at a time. Host memory only.
+- Timer: a thread-local RAII holder closes the handle when its thread ends; a static object pairs `timeBeginPeriod(1)` with `timeEndPeriod(1)`.
+
+### ML-3. Results
+- Runtime, idle boot without a card (`--no-memcard --exit-at 14400`, `--vk-validation`, normal speed): private memory 400 MB, one step to about 600 MB on the title screen (the texture cache filling), then flat; handles and threads flat; no undestroyed-object messages from the validation layer at `vkDestroyDevice`.
+- Without input, a boot with or without a card plays no movie (startup screen, then title and attract demos). The movie path needs input: card S (copy), `--pad-script 1200:start,1500:cross,1700:cross` then cross every 300 vblanks from 10400 (SS01, mission title, briefing, mission 1 flight), `--hash-log --log-allocs --fast-until 30000 --exit-at 30000`.
+- Regression against the build without the fix (same sources with the HEAD `libmpeg.cpp` and `timer_win32.cpp`), that run and two boots (empty card; `--no-memcard`): **hash logs byte-identical at every vblank**, allocation logs identical, written cards identical. Both builds level off at 620–650 MB with flat handle and thread counts in flight; the saved decoder memory (estimated about 1.5 MB per movie) is below the noise of the texture cache.
+- `ctest --preset dev`: passes.
+
+## 2aq. Hangar aircraft tinted teal; device lost under the validation layer (2026-11-02)
+
+Player report (0.9.5 log, then confirmed on 0.9.6): in the hangar every aircraft and the special weapons are teal, with panel lines and shading intact; the room is normal. RTX 5070 Ti, driver 617.42, 2560 × 1440 at 120 Hz, internal scale 6, SMAA, interpolation on, v-sync off, cap 120. Save imported from PCSX2 (slot 0: campaign cleared several times, mission 1 HARD, S-37A, everything owned, SCREEN RATIO 16:9; checksum valid).
+
+### HT-1. The pass involved
+- The viewer draws the aircraft and the special weapons with the aircraft light set (`CreateHangarObjects` 0x0022E450), which adds a light-map pass: T8 128 × 128 at TBP 0x3400, CLUT CBP 0x3F08, ALPHA_2 0x58 (`Cs·Ad + Cd`), TEST_2 depth GEQUAL, no depth write (`WriteLightSetPacket` 0x001370D8; PCSX2 hangar dump: 6,320 strips). The room uses the room light set without it. So the light map is added in proportion to the alpha the skin pass (T8 512 × 512 at 0x2D00, CLUT 0x3800, alpha written) left in the frame buffer; the report looks like the map added at full strength everywhere.
+- In one frame the hangar uploads several textures over the same local memory: the room texture (T8 1024 × 512 at 0x2D00, blocks 0x2D00–0x34FF) covers the light map at 0x3400, then the skin and the light map are uploaded over it.
+
+### HT-2. Not reproduced (RX 9070 XT, development build)
+- Card S hangar route and the player's save (LOAD File 1, CONTINUE, Start on SS01, briefing, START MISSION: `--pad-script 700:start,1000:down,1060:cross,1400:cross,2300:cross,3200:up,3260:cross,3800:start,7100:start,8000:cross`), at 1× and at 6× with SMAA and interpolation; card S with interpolation, v-sync off, cap 120, captured from the screen (blended copies); card S patched to SCREEN RATIO 16:9: the aircraft in normal colours every time.
+- Checked and ruled out on reading: anti-aliasing (flight views only, alpha kept), `MapBlend` for `Cs·Ad + Cd` (exact, unchanged since 0.9.5), the target format (R8G8B8A8_UNORM on every GPU), the barriers between GS-memory updates and decodes (compute read → transfer write → compute read), the palette buffer offsets (multiples of 1 KiB), the frame-as-texture and GPU-palette paths (§2z; their pages are not the hangar's).
+- `--verify-texture-decode` on the player's route at 6× to vblank 10200: 173,575 GPU decodes equal to the CPU decode; GS processing 9.0 ms per frame with the check.
+- Open: the GPU/driver (all validation is on AMD) is the remaining difference. To settle: a development build on the NVIDIA machine with `--cpu-texture-decode` (tint gone: GPU decode) and `--verify-texture-decode` (logs the first differing textures), and the GRAPHICS settings 1×, interpolation off, AA off.
+
+### HT-3. Proposed safeguard (not built; needs the User's approval)
+- A sampled decode check in all builds: the first GPU decode of each texture key, up to a fixed number per session, read back and compared with `DecodeOnCpu` (the `--verify-texture-decode` machinery, already compiled into every build). On the first difference: one log line with the texture and texel (as the development warning) and the rest of the session decoded on the CPU. Presentation only.
+
+### HT-4. `VK_ERROR_DEVICE_LOST` with `--vk-validation`
+- Once, card S route at 6× with SMAA, interpolation and `--screenshot-at 10861,11000,11400`: `vkAcquireNextImageKHR: VK_ERROR_DEVICE_LOST` at vblank ≈ 11000 (pre-mission menu); no validation message before it. Windows filed LiveKernelEvents 141 and 117 (GPU engine timeout, TDR) and 0x1B0 after the next wake from sleep, most likely this event.
+- Not reproduced in two runs with the same options (with and without the screenshots). On reading: the acquire / submit / present path has no early return between acquire and submit, the swapchain is re-created after `vkDeviceWaitIdle`, OUT_OF_DATE / SUBOPTIMAL are handled. No cause found in the port's code; a rare GPU timeout under the layer (layer 1.4.363, driver Vulkan 1.4.355). If it recurs: record with AMD Radeon GPU Detective, or log `VK_EXT_device_fault` data at device loss (not built).
+

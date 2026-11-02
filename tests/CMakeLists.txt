@@ -4,12 +4,14 @@
 add_executable(ac04_tests
     test_main.cpp
     test_command_line.cpp
+    test_controls_file.cpp
     test_elf_loader.cpp
     test_folder_card.cpp
     test_frame_pacer.cpp
     test_gs.cpp
     test_libm.cpp
     test_guest_memory.cpp
+    test_input.cpp
     test_iso9660.cpp
     test_output_layout.cpp
     test_pipeline_cache.cpp
@@ -21,5 +23,6 @@ add_executable(ac04_tests
     test_vectors_s4.cpp
     test_determinism.cpp
     test_leaks.cpp)
-target_link_libraries(ac04_tests PRIVATE ac04_game ac04_core ac04_doctest)
+# ac04_platform: the binding parsers (test_input.cpp, test_controls_file.cpp) use SDL's key names.
+target_link_libraries(ac04_tests PRIVATE ac04_game ac04_core ac04_platform ac04_doctest)
 add_test(NAME ac04_tests COMMAND ac04_tests)

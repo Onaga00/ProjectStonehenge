@@ -12,6 +12,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "common/vu0_math.h"
 #include "game/flight_common.h"
 #include "game/main_context.h"
@@ -2973,6 +2974,15 @@ void func_0016B7C8(f32 scale, f32 off, u32 list, s32 x, s32 y0, s32 w, s32 h) {
     Put64(p, 2, 0);
 }
 
+// port: digital map cycle (port_hooks.h InputHooks): a pressure pad (type 5) whose player's device
+// gives square no pressure takes the analog pad's (type 4) map-button cycle; the original type-4 code
+// runs unchanged.
+namespace {
+bool MapCycle(s32 p, s32 mode) {
+    return mode == 4 || (mode == 5 && static_cast<u32>(p) < 2 && port::Input().digital_map_cycle[p]);
+}
+}  // namespace
+
 // EE: 0x0016BC68
 // Radar map (bucket 3; replaces the radar while the map is selected: pad mode 4 / versus, or the
 // analog mode by the pressure of PadExt +0x1D): the pre-built map image (scene +0x16F0, called
@@ -2999,7 +3009,7 @@ void DrawRadarMap(u32 cam, u32 list, u32 player) {
     }
     const s32 mode = GRef<s32>(PadState(static_cast<s32>(player)));
     f32 z;
-    if (mode == 4 || GRef<s8>(Scene() + 0x1653) == 2) {
+    if (MapCycle(static_cast<s32>(player), mode) || GRef<s8>(Scene() + 0x1653) == 2) {
         const u8 sel = GRef<u8>(HudState() + 0x72);
         z = sel == 1 ? 0.25f : sel == 2 ? 0.5f : 1.0f;
     } else if (static_cast<u32>(mode - 5) < 2) {
@@ -3789,7 +3799,7 @@ void DrawHud(u32 cam, s32 p, u32 list) {
     const u32 pe = PadExt(p);
     const u32 sel = HudState() + 0x72;
     if (GRef<s8>(Scene() + 0x1653) == 2) {
-        if (mode == 4) {
+        if (MapCycle(p, mode)) {
             if ((W(pe + 4) & 0x200u) != 0) GRef<u8>(sel) = static_cast<u8>(GRef<u8>(sel) + 1u);
             if (!(GRef<u8>(HudState() + 0x72) < 3)) GRef<u8>(HudState() + 0x72) = 0;
         } else if (static_cast<u32>(mode - 5) < 2) {
@@ -3809,7 +3819,7 @@ void DrawHud(u32 cam, s32 p, u32 list) {
         else
             DrawRadarMap(cam, list, static_cast<u32>(p));
     } else {
-        if (mode == 4) {
+        if (MapCycle(p, mode)) {
             if ((W(pe + 4) & 0x200u) != 0) GRef<u8>(sel) = static_cast<u8>(GRef<u8>(sel) + 1u);
             if (!(GRef<u8>(HudState() + 0x72) < 4)) GRef<u8>(HudState() + 0x72) = 0;
         } else if (static_cast<u32>(mode - 5) < 2 && GRef<u8>(pe + 0x1D) != 0) {

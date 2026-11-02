@@ -48,22 +48,24 @@ This project is being developed with extensive use of generative AI. The reverse
 - **Dedicated in-game graphics settings**: a GRAPHICS in-game page under OPTIONS → SCREEN SETTINGS
 
 **Controls**
-- Keyboard and gamepad support through SDL3, with bindings in `settings.json`
+- Keyboard, mouse and gamepad support through SDL3, with bindings in `controls.ini`, a plain text file you can edit with Notepad
+- **Mouse flight**: the mouse steers roll and pitch in flight (or yaw or the camera; set in `controls.ini`)
+- **Pressure-sensitive buttons** of a DualShock 3 (with Sony's `sixaxis.sys` or DsHidMini in SXS mode) and of PS3-compatible DualShock 2 adapters, as on a DualShock 2
+- **Map button on pads without pressure**: each press steps radar → map near → map half → whole map, as the original does with a DualShock 2 in analog mode
 - **Vibration** on gamepads with rumble, switched by the game's own VIBRATION option
 - **Modern control types**: two extra CONTROL TYPE choices on CONTROLLER SETUP with L1/L2 and R1/R2 swapped (throttle on the triggers); the original types are still there
 
-Default keyboard mapping (PS2 controller → keyboard). What each button does in flight depends on the CONTROL TYPE chosen in the game's CONTROLLER SETUP. Keys can be changed under `input.bindings` in `settings.json`.
+Default keyboard and mouse (in the style of ACE COMBAT 7 on the PC). Keys keep their action with every CONTROL TYPE. Change them in `%LOCALAPPDATA%\ProjectStonehenge\controls.ini`; delete the file to get the defaults back.
 
-| PS2 control | Key | PS2 control | Key |
+| Action | Key | Action | Key |
 |---|---|---|---|
-| ✕ Cross | `Z` | Start | `Enter` |
-| ○ Circle | `X` | Select | `Backspace` |
-| □ Square | `C` | D-pad | Arrow keys |
-| △ Triangle | `V` | Left stick | `W` `A` `S` `D` |
-| L1 | `Q` | Right stick | `I` `J` `K` `L` |
-| R1 | `E` | L3 (left stick press) | `F` |
-| L2 | `1` | R3 (right stick press) | `H` |
-| R2 | `3` | | |
+| Throttle up / down | `W` / `S` | Machine gun | Left mouse, `Left Ctrl` |
+| Roll left / right | `A` / `D` (or mouse) | Missile | `Space`, right mouse |
+| Pitch up / down | `3` / `1` (or mouse) | Change weapon | mouse wheel, `2` |
+| Yaw left / right | `Q` / `E` | Change target | `R`, middle mouse |
+| Look around | Numpad `8` `2` `4` `6` | Map | `M` |
+| Change view / rear view | `V` / `C` | Level aircraft | `X` |
+| Pause | `Esc` | Menus | arrow keys, `Enter` (accept), `Backspace` (back) |
 
 **Saves**
 - **PCSX2-compatible save system** using PCSX2's folder memory card format, so saves can be moved between the port and the emulator in both directions
@@ -96,7 +98,8 @@ Default keyboard mapping (PS2 controller → keyboard). What each button does in
 3. Dump your own copy of the game to an ISO (for example with ImgBurn on PC, or by following PCSX2's [dumping guide](https://pcsx2.net/docs/setup/dumping/)).
 4. Launch `ProjectStonehenge.exe`. On the first start the port asks for the disc image: click **Select ISO...** and pick your ISO. The path is saved in `settings.json`. You can also start the port with `ProjectStonehenge.exe --iso "C:\path\to\game.iso"`.
 5. Play. Everything the port writes goes to `%LOCALAPPDATA%\ProjectStonehenge\`:
-   - `settings.json`: port settings (graphics, input bindings, debug options)
+   - `settings.json`: port settings (graphics, control types, debug options)
+   - `controls.ini`: keyboard, mouse and gamepad bindings
    - `saves\`: the memory card (PCSX2 folder card format)
    - `logs\`: the log of the last session (attach it to bug reports)
    - `cache\`: GS pipelines (recompiled with each gpu driver change)

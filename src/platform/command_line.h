@@ -17,6 +17,7 @@ struct CommandLine {
     std::string antialiasing;                // --antialiasing off|fxaa|smaa overrides presentation.antialiasing
     std::optional<bool> debug_overlay; // --debug-overlay / --no-debug-overlay
     std::optional<bool> fps_overlay;   // --fps-overlay / --no-fps-overlay
+    bool gpu_profile = false;          // --gpu-profile: GPU time per section of the frame in the log
     bool verify_iso = false;           // --verify-iso          ignore the verification cache
     bool allow_unverified_iso = false; // --allow-unverified-iso (development builds only)
     bool dump_ram_after_load = false;  // --dump-ram-after-load  (development builds only)

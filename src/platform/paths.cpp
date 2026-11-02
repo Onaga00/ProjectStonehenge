@@ -21,6 +21,7 @@ bool ResolvePaths(const std::filesystem::path& user_data_override, Paths& out, s
     out.saves = out.user_data / "saves";
     out.logs = out.user_data / "logs";
     out.settings_file = out.user_data / "settings.json";
+    out.controls_file = out.user_data / "controls.ini";
     out.cache = out.user_data / "cache";
     out.pipeline_cache_file = out.cache / "pipelines.bin";
     out.exe_dir = ExecutableDir();

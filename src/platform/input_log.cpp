@@ -12,7 +12,10 @@ constexpr std::uint32_t kVersion = 1;
 constexpr std::size_t kPadBytes = 19;
 
 void PutPad(std::uint8_t* p, const PadState& s) {
-    p[0] = s.connected ? 1 : 0;
+    // Bit 1: the digital map cycle (port_hooks.h InputHooks), written only for a connected pad;
+    // logs of earlier builds hold 0 or 1 (cycle off), and their readers take any non-zero byte as
+    // connected.
+    p[0] = static_cast<std::uint8_t>(s.connected ? (s.map_cycle ? 3 : 1) : 0);
     p[1] = static_cast<std::uint8_t>(s.buttons);
     p[2] = static_cast<std::uint8_t>(s.buttons >> 8);
     p[3] = s.rx;
@@ -24,7 +27,8 @@ void PutPad(std::uint8_t* p, const PadState& s) {
 
 PadState GetPad(const std::uint8_t* p) {
     PadState s;
-    s.connected = p[0] != 0;
+    s.connected = (p[0] & 1) != 0;
+    s.map_cycle = s.connected && (p[0] & 2) != 0;
     s.buttons = static_cast<std::uint16_t>(p[1] | p[2] << 8);
     s.rx = p[3];
     s.ry = p[4];

@@ -22,11 +22,11 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 // Port menu area slots (port_menu.h; 0-3 are CONTROLLER SETUP's).
 enum Slot : u32 {
     kSlotTitle = 4,
-    kSlotNames = 5,    // 6 rows
-    kSlotValues = 11,  // 6 rows
-    kSlotRects = 17,
-    kSlotItems = 18,
-    kSlotItemText = 19,
+    kSlotNames = 5,    // 7 rows
+    kSlotValues = 12,  // 7 rows
+    kSlotRects = 19,
+    kSlotItems = 20,
+    kSlotItemText = 21,
 };
 
 constexpr u32 kItemCount = 6;  // column 0 of SCREEN SETTINGS on the PS2
@@ -38,10 +38,11 @@ struct Row {
 };
 
 // Rows and their choices; square 0 is the leftmost.
-constexpr s32 kRows = 6;
+constexpr s32 kRows = 7;
 constexpr Row kRowTable[kRows] = {
     {"FULLSCREEN", 2, {"ON", "OFF"}},
     {"V-SYNC", 2, {"ON", "OFF"}},
+    {"INTERPOLATION", 2, {"ON", "OFF"}},
     {"FRAME RATE CAP", 5, {"60 FPS", "120 FPS", "144 FPS", "240 FPS", "360 FPS"}},
     {"INTERNAL RES.", 8, {"1X", "2X", "3X", "4X", "5X", "6X", "7X", "8X"}},
     {"SCALING FILTER", 2, {"SHARP", "SMOOTH"}},
@@ -64,7 +65,8 @@ s32 g_Row = 0;
 port::GraphicsOptions g_Edit;
 port::GraphicsOptions g_Entry;  // the values when the view opened (CANCEL restores them)
 
-constexpr s32 kCapRow = 2;
+constexpr s32 kVsyncRow = 1;
+constexpr s32 kCapRow = 3;
 // The frame rate cap applies only with v-sync off: with v-sync on its row shows "V-SYNC", has no
 // squares and is skipped by the cursor.
 bool RowEnabled(const port::GraphicsOptions& g, s32 row) { return row != kCapRow || !g.vsync; }
@@ -81,12 +83,13 @@ s32 Choice(const port::GraphicsOptions& g, s32 row) {
     switch (row) {
         case 0: return g.fullscreen ? 0 : 1;
         case 1: return g.vsync ? 0 : 1;
-        case 2:
+        case 2: return g.frame_interpolation ? 0 : 1;
+        case 3:
             for (s32 i = 0; i < 5; ++i)
                 if (kFrameCaps[i] == g.frame_cap) return i;
             return 4;
-        case 3: return g.internal_scale < 1 ? 0 : (g.internal_scale > 8 ? 7 : g.internal_scale - 1);
-        case 4: return g.smooth_filter ? 1 : 0;
+        case 4: return g.internal_scale < 1 ? 0 : (g.internal_scale > 8 ? 7 : g.internal_scale - 1);
+        case 5: return g.smooth_filter ? 1 : 0;
         default: return g.antialiasing < 0 ? 0 : (g.antialiasing > 2 ? 2 : g.antialiasing);
     }
 }
@@ -95,9 +98,10 @@ void SetChoice(port::GraphicsOptions& g, s32 row, s32 c) {
     switch (row) {
         case 0: g.fullscreen = c == 0; break;
         case 1: g.vsync = c == 0; break;
-        case 2: g.frame_cap = kFrameCaps[c]; break;
-        case 3: g.internal_scale = c + 1; break;
-        case 4: g.smooth_filter = c == 1; break;
+        case 2: g.frame_interpolation = c == 0; break;
+        case 3: g.frame_cap = kFrameCaps[c]; break;
+        case 4: g.internal_scale = c + 1; break;
+        case 5: g.smooth_filter = c == 1; break;
         default: g.antialiasing = c; break;
     }
 }
@@ -119,8 +123,8 @@ void MoveCursor(u32 obj) {
 u32 PanelRects() {
     u32 w[12];
     for (u32 i = 0; i < 8; ++i) w[i] = GRef<u32>(0x003AF3D0 + i * 4);
-    w[8] = (0x7200u + 0x0AC0u) << 16 | (0x6C00u + 0x1140u);  // centre (276, 172)
-    w[9] = 0x0C20u << 16 | 0x1E80u;                             // 488 x 194 (six rows)
+    w[8] = (0x7200u + 0x0BA0u) << 16 | (0x6C00u + 0x1140u);  // centre (276, 186)
+    w[9] = 0x0DE0u << 16 | 0x1E80u;                             // 488 x 222 (seven rows)
     w[10] = 0x00D1C1A9u;
     w[11] = 0x3DCCCCCDu;  // 0.1
     return port_menu::Words(kSlotRects, w, 12);
@@ -225,7 +229,7 @@ void GraphicsUpdate(u32 obj) {
         if ((edge & 0x4000) != 0) {
             PlayMenuSe(0, 3);
             g_Edit = port::Menu().graphics_defaults;
-            if (!RowEnabled(g_Edit, g_Row)) g_Row = kCapRow - 1;
+            if (!RowEnabled(g_Edit, g_Row)) g_Row = kVsyncRow;
             MoveCursor(obj);
             Preview();
         }

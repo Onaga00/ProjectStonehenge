@@ -96,8 +96,14 @@ u32 sceMpegCreate(u32 mp, u32 work, s32 size) {
     GRef<u64>(mp + 0x28) = ~0ull;
     GRef<u64>(mp + 0x30) = ~0ull;
     GRef<u64>(mp + 0x38) = 0;
+    // The game never calls sceMpegDelete, and `mp` lies in a work-heap block whose address depends
+    // on the heap state at movie start. One decoder runs at a time (one SMV reader, one IPU), so
+    // the decoders of earlier movies are released here (host memory only; guest RAM unchanged).
+    for (auto& [addr, old] : Decoders()) {
+        if (old.dec != nullptr) mpeg2_close(old.dec);
+    }
+    Decoders().clear();
     Decoder& d = Decoders()[mp];
-    if (d.dec != nullptr) mpeg2_close(d.dec);
     mpeg2_accel(0);  // portable C paths only
     d.dec = mpeg2_init();
     d.bs.clear();

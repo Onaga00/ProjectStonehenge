@@ -27,12 +27,13 @@ Accepted by every build, including release.
 | Parameter | Value | Since | Effect |
 |---|---|---|---|
 | `--iso <path>` | path of the disc image (UTF-8) | A (used from B) | Uses this image instead of `paths.iso` in `settings.json` |
-| `--user-data <dir>` | folder | A | Uses this folder for `settings.json`, `saves\` and `logs\` instead of `%LOCALAPPDATA%\ProjectStonehenge\`. Meant for testing; the folder is created if needed |
+| `--user-data <dir>` | folder | A | Uses this folder for `settings.json`, `controls.ini`, `saves\` and `logs\` instead of `%LOCALAPPDATA%\ProjectStonehenge\`. Meant for testing; the folder is created if needed |
 | `--internal-scale <n>` | factor 1–8 | 2026-10-19 | Internal rendering resolution for this session, as `presentation.internal_scale` (`renderer.md` §1). Presentation only: guest RAM is identical at every factor (`validation.md` IR-1) |
 | `--antialiasing <m>` | `off`, `fxaa` or `smaa` | 2026-10-20 | Anti-aliasing of the flight views for this session, as `presentation.antialiasing` (`port-features.md` §2). Presentation only: guest RAM identical in every mode (`validation.md` §2n) |
 | `--debug-overlay` | — | A (overlay in D) | Enables the debug overlay for this session, as if `debug.overlay_enabled` were true |
 | `--no-debug-overlay` | — | A (overlay in D) | Disables the debug overlay for this session |
 | `--fps-overlay` / `--no-fps-overlay` | — | 2026-10-20 | Shows (hides) the frame-rate overlay for this session, as `debug.fps_overlay`: presented frames per second and the mean frame time over the last half second, small white text with a shadow at the top right of the window. Also a checkbox in the debug overlay's Performance panel |
+| `--gpu-profile` | — | 2026-10-30 | Writes the GPU time of each section of the frame to the log at exit (`renderer: GPU time per frame with GS draws by section …`: draws, conversions, view syncs, frame as texture, DATE / shader-blend regions, texture work, anti-aliasing, present copy, output pass …), from GPU timestamps at the end of each section (`renderer.md` §3). Without it the log still has the frame's total GPU time (two timestamps per frame). Costs about 0.1 ms of recording per frame and no measurable frame rate. All builds, so players can send a profile |
 | `--verify-iso` | — | B | Recomputes the disc image SHA-1 instead of using the cached result (`<user data>\iso_cache.json`, keyed by path, size and modification time) |
 | `--version` | — | A | Shows the version, commit and build type, then exits |
 | `--help`, `-h`, `/?` | — | A | Shows the usage text, then exits |

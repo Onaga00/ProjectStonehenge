@@ -10,7 +10,8 @@ The debug overlay (formerly `debug-overlay.md`, "Proposal: debug overlay") is se
 
 | Data | Place | User |
 |---|---|---|
-| Port settings (presentation, input bindings, Modern control types, audio, paths, debug) | `%LOCALAPPDATA%\AC04Port\settings.json` (or `--user-data`) | the port (`src/platform/settings.*`) |
+| Port settings (presentation, Modern control types, audio, paths, debug) | `%LOCALAPPDATA%\ProjectStonehenge\settings.json` (or `--user-data`) | the port (`src/platform/settings.*`) |
+| Key, mouse and gamepad bindings (2026-10-31; before: `settings.json` `input.bindings`) | `%LOCALAPPDATA%\ProjectStonehenge\controls.ini` (below, "Controls file") | the player; the port writes it only when it is missing (`src/platform/controls_file.*`) |
 | The game's own options: brightness, screen ratio, screen position, captions, HUD unit, interlude, both players' control type, reverse, vibration and pilot view | the game's save data on the memory card (`saves\`, the campaign block 0x002A0318, 0x12C0 bytes, which includes the option bytes 0x002A15CC and the controller words 0x002A15D0), written by the game's SAVE page | the game |
 
 A new memory card at first start: when the saves folder holds no card, the port creates a formatted 8 MB PCSX2 folder card there at once (`_pcsx2_superblock`, `../formats/folder-memcard.md` §9), so PCSX2 sees a formatted card even before the first save; the game itself creates its save file on the first SAVE ("No AC04 files found on memory card. Create save file?"). Checked 2026-10-20 (`validation.md` §2o): New Game, campaign menu, SAVE, File 1, then LOAD and CONTINUE in a new session; the files and the `_pcsx2_index` are those of a PCSX2-made save.
@@ -20,9 +21,10 @@ Checked end to end 2026-10-20 (`validation.md` §2m, ST-3): CONTROLLER SETUP cha
 ### `settings.json` rules (User decision 2026-10-20)
 
 - Missing keys take their default; a missing file is written with the defaults at start. The defaults depend on the display the port starts on (below), so a missing key takes the default **for this display**.
-- A file that cannot be read, is not valid JSON, has another `version` (current: 1), an unknown key or an invalid value is **rejected as a whole**: the port logs what was wrong, deletes the file and writes the defaults in its place. This also applies when the file is changed on disk while the port runs (it is re-read once per second; every change applies at once).
+- A file that cannot be read, is not valid JSON, has another `version` (current: 2), an unknown key or an invalid value is **rejected as a whole**: the port logs what was wrong, deletes the file and writes the defaults in its place. This also applies when the file is changed on disk while the port runs (it is re-read once per second; every change applies at once).
 - The file holds only known keys. It is written when a menu page saves (GRAPHICS: ACCEPT; CONTROLLER SETUP: ACCEPT) and at exit for the windowed size; always the file values, so session-only command-line overrides are never saved.
 - Adding a key: give it a default in `src/platform/settings.h`, read and write it in `settings.cpp` (with `Reader`), add it to the change notification (`SettingsStore::Replace`), test it in `tests/test_settings.cpp`, and list it below. A key added this way keeps older files valid (missing = default). Removing or renaming a key, or changing the meaning of a value, needs a `version` bump, which rejects older files (the User's rule above).
+- Version 2 (2026-10-31): `input.bindings` moved to `controls.ini`. A version 1 file is incompatible like any other: deleted and replaced with the defaults (User rule 2026-10-31: no migration of incompatible files; test `settings: a file of version 1 is incompatible`).
 
 ### Defaults on the start display (User request 2026-10-20)
 
@@ -39,7 +41,7 @@ The GRAPHICS page's DEFAULT button sets these values too.
 
 | Key | Values | Default |
 |---|---|---|
-| `version` | `1` | `1` |
+| `version` | `2` (2026-10-31; before: 1) | `2` |
 | `presentation.filter` | `sharp`, `smooth` | `sharp` |
 | `presentation.vsync` | `true`, `false` | `true` |
 | `presentation.frame_cap` | `60`, `120`, `144`, `240`, `360`; used only with v-sync off (with v-sync on the display paces the frames) | `360`, or the refresh-rate cap (above) |
@@ -51,14 +53,146 @@ The GRAPHICS page's DEFAULT button sets these values too.
 | `presentation.default_screen_ratio` | `monitor` (the game's SCREEN RATIO starts at 16:9 on a monitor wider than 4:3, §2), `game` (the PS2 default, 4:3) | `monitor` |
 | `paths.iso` | disc image path | empty |
 | `audio.on_focus_loss` | `keep_playing`, `mute` | `keep_playing` |
-| `input.bindings.<control>` | list of `key:<SDL key name>`, `pad:<button>`, `axis:<axis>+` / `axis:<axis>-` | see `DefaultInputSettings()` |
 | `input.modern_controls` | `[player 1, player 2]`, `true` / `false`: the Modern variant of the game's CONTROL TYPE (L1 / L2 and R1 / R2 swapped; set on CONTROLLER SETUP, §4) | `[true, true]` |
 | `debug.overlay_enabled` | `true`, `false` | `true` in development builds, `false` in release |
 | `debug.overlay_toggle` | a typed character, or `key:<SDL key name>` | `\` |
 | `debug.fps_overlay` | `true`, `false`: the frame-rate overlay (§7) | `false` |
 
-PS2 controls: `cross circle square triangle l1 r1 l2 r2 l3 r3 start select up down left right lx- lx+ ly- ly+ rx- rx+ ry- ry+`.
-Gamepad buttons: `south east west north back guide start leftstick rightstick leftshoulder rightshoulder dpup dpdown dpleft dpright` (positions, not vendor labels). Gamepad axes: `leftx lefty rightx righty lefttrigger righttrigger`. Port 1 uses the keyboard and the first gamepad, port 2 the second gamepad.
+### Controls file (`controls.ini`, 2026-10-31, User request)
+
+The bindings have their own file, meant to be edited with Notepad by players who don't know JSON.
+
+**Format.** INI was chosen over the alternatives:
+- YAML: indentation rules, and `no` or `Y` are read as true/false;
+- TOML: values need quotes, and it would be a new dependency;
+- JSON: quotes and commas everywhere.
+
+Lines are `Name = input, input`, grouped in sections, with notes after `;` or `#`. Our own reader parses it (`src/platform/controls_file.cpp`), so there is no new dependency.
+
+**Sections.**
+- `[Keyboard]` names **actions** (`Throttle up = W`). Each action resolves to its PS2 control in the game's Classic NORMAL layout (CONTROLLER SETUP's table 0x003AF5B8 / 0x003AF5F0, `../subsystems/pad-input.md`).
+  - Keys and mouse keep their action under every control type. With a Modern type the backend places them on the swapped control, so the Modern swap lands them back on their action (`InputBackend::Update`).
+  - With EASY the yaw keys do nothing, like the pad's yaw buttons.
+- `[Mouse]`: what the mouse steers (see "Mouse" below).
+- `[Gamepad]` names the **PS2 buttons** (`Cross = South`). The pad is a DualShock 2 by position; the game's CONTROL TYPE and the Modern swap decide what each button does, as before.
+
+**Names.** Matching ignores case, spaces and `-` (`D-Pad Up` = `dpad up`). An empty value unbinds the action. Accepted inputs:
+- **keys:** SDL key names (`W`, `Left Ctrl`, `Keypad 8`, `Return` or `Enter`, `Escape` or `Esc`); `Comma`, `Period`, `Semicolon`, `Minus` for those keys;
+- **mouse:** `Mouse Left/Right/Middle/Back/Forward`, `Mouse Wheel Up/Down`. Each wheel notch is one press of 2 ticks, then 1 tick released before the next;
+- **gamepad positions:** `South East West North Back Start Guide`, `Left/Right Shoulder`, `Left/Right Trigger`, `Left/Right Stick Button`, `D-Pad Up/Down/Left/Right`, `Left/Right Stick Up/Down/Left/Right`;
+- **raw gamepad inputs:** `Joy Axis 7` (whole axis, resting at its minimum), `Joy Axis 7+` / `-` (half axis), `Joy Button 4`;
+- **the earlier technical syntax:** `key:`, `pad:`, `axis:`, `joyaxis:`, `joybutton:`, `mouse:`, `wheel:`.
+
+**Shared controls.** Several actions can share one PS2 control:
+- `Machine gun` and `Accept` are ×;
+- `Change target` and `Back` are △;
+- `Level aircraft` and `Menu up` are d-pad up; `Change view` and `Menu down` are d-pad down.
+
+**File handling.**
+- The file starts with a short guide: how to change a control and every input name (keys, mouse, gamepad, adapters, what the mouse can steer), before the first section (User request 2026-10-31).
+- The port writes the file, with its defaults and explanations, only when it is missing (log: `controls.ini written with the default controls`). It never rewrites a compatible file, so a player's notes and layout stay.
+- **Version.** The line `Version = 1` before the first section is the file's layout version (`kControlsVersion`). A file with another version or without the line is incompatible: deleted and replaced with the defaults, like an incompatible `settings.json` (User rule 2026-10-31; log: `controls.ini is not of version 1: deleted and replaced with the default controls`). The version goes up when an action or entry is removed or renamed or a value changes meaning.
+- **In a compatible file, an entry the port can't read keeps its default and is logged** (`controls.ini line N: …`). The rest of the file still counts (User approval 2026-10-31).
+- Edits apply while the port runs; the file is checked once a second.
+- Delete the file to get the defaults back.
+
+**Ports.** Port 1 has the keyboard, the mouse and the first gamepad; port 2 has the second gamepad.
+
+**Tests:** `tests/test_controls_file.cpp`:
+- the default file reads with no warning;
+- the AC7-style defaults;
+- the gamepad defaults equal those of earlier builds;
+- player spellings;
+- a player's file with typos, an unknown action and an unknown section;
+- files of another version or without one are incompatible.
+
+**Keyboard defaults: ACE COMBAT 7 style** (User choice 2026-10-31). They follow AC7's PC defaults as community lists give them; the lists are not official ([StrategyWiki](https://strategywiki.org/wiki/Ace_Combat_7:_Skies_Unknown/Controls), [DefKey](https://defkey.com/ace-combat-7-skies-unknown-pc-shortcuts), [Migman](http://www.migman.com/sw/ace-combat-7/_key-commands.php)). Every AC7 flight action has an AC04 counterpart:
+
+| Action (AC04) | PS2 control (Classic NORMAL) | Default | Source |
+|---|---|---|---|
+| Throttle up / down | R1 / L1 | W / S | AC7 |
+| Roll left / right | left stick X | A / D | AC7 |
+| Pitch up / down | left stick Y (down / up) | 3 / 1 | AC7 |
+| Yaw left / right | L2 / R2 | Q / E | AC7 |
+| Machine gun (VULCAN) | × | Mouse Left, Left Ctrl | AC7 (mouse); Left Ctrl ours |
+| Missile | ○ | Space, Mouse Right | AC7 |
+| Change weapon | SELECT | Mouse Wheel Up/Down, 2 | AC7 (wheel); 2 ours |
+| Change target | △ | R, Mouse Middle | ours (to check against AC7) |
+| Map | □ | M | ours (to check) |
+| Change view | d-pad down | V | ours (to check) |
+| Rear view | R3 | C | ours (to check) |
+| Level aircraft | d-pad up | X | ours (to check) |
+| Look up/down/left/right | right stick | Keypad 8/2/4/6 | AC7 (numpad camera) |
+| Pause | START | Escape | ours |
+| Menu up/down/left/right, Accept, Back | d-pad, ×, △ | arrows, Return / Keypad Enter, Backspace | ours |
+
+The keys marked "ours" stay until the User checks them in AC7's key settings. The arrow keys are the d-pad, not flight controls: they move through menus, and in flight up levels the aircraft and down changes the view.
+
+### Mouse (2026-10-31, User request)
+
+The mouse acts as a stick for port 1. Its settings are in the `[Mouse]` section of `controls.ini`:
+
+| Entry | Values | Default |
+|---|---|---|
+| `Left/right`, `Up/down` | what the axis steers: `Roll` (left stick X), `Pitch` (left stick Y), `Yaw` (L2 / R2, as pressures), `Camera` (right stick X or Y), `None` | `Roll`, `Pitch` |
+| `Sensitivity` | 0.1–10 | 1.0 |
+| `Invert up/down` | `yes` / `no`; no: mouse forward = stick forward (nose down) | `no` |
+| `Return to centre` | `yes`: the deflection follows the mouse's speed; `no`: the stick stays where the mouse moved it (400 pixels from centre to full) | `yes` |
+
+With return to centre, each tick keeps 80 % of the deflection and adds the new motion. At sensitivity 1, 12 pixels per tick (720 per second) gives full deflection, and the stick centres about 0.2 s after the mouse stops.
+
+**When it steers.** The mouse steers **only in flight**.
+- The game marks the ticks that read the player's flight controls: a `// port:` line in `ReadPlayerControls` sets `port::Input().in_flight`.
+- The host captures the pointer (SDL relative mouse mode) only in those ticks, and only with the window focused, the debug overlay closed and a live run (no pad script, input log or recording).
+- Otherwise the pointer is free and the stick centred: in menus, while paused (the simulation step stops, so the flag drops), in other windows and with the overlay open.
+
+**Other details.**
+- The stick advances once per game tick (`InputBackend::StepTick`), not per presented frame, so the feel does not depend on the frame rate.
+- The game makes the stick round as it does a DualShock 2's (`ConvertPadInput`), so diagonals behave as on the pad.
+- Mouse buttons and the wheel are ordinary inputs of `[Keyboard]` actions. They are ignored while the overlay has the keyboard.
+- Input logs record the resulting pad bytes, so replays stay exact.
+- **Tests:** `tests/test_input.cpp` (stick with and without return to centre, invert and sensitivity, wheel presses).
+
+### Map button without pressure (2026-10-31, User request)
+
+On the PS2 the map button (□) works in two ways (`../subsystems/pad-input.md`):
+- **pressure mode** (DualShock 2, pad type 5): the map shows while □ is held, zoomed by how hard it is pressed;
+- **analog mode** (type 4): each press steps HudState +0x72: radar → map 1/4 → map 1/2 → whole map → radar. In versus: speed readout → radar → map.
+
+The port always reports pressure mode. Until now, a device that gives □ no pressure (keyboard, Xbox and similar pads) could therefore only hold the map at full zoom.
+
+**What changed.** When the player's devices give □ no pressure (no DualShock 3 or pressure adapter on □; `InputBackend::Update` → `PadState::map_cycle`), the game takes the original type-4 path. This is the original 4-step cycle the User chose. Two `// port:` changes do it:
+- `UpdateMappedPadButtons`: □ also sets mapped bit 9 (0x200). That is the bit the type-4 map 0x0029FF40 gives □ (entry 7 = 9). The type-5 map 0x0029FF60 gives □ only its value (0x8D), and none of its entries sets bit 9.
+- `DrawHud` and `DrawRadarMap`: their `mode == 4` tests also accept type 5 when the cycle is on (`MapCycle`).
+
+**Effect.**
+- The original code runs unchanged, and HudState +0x72 only holds values the original holds.
+- Throttle and yaw stay analog.
+- With a DualShock 3, □ keeps the original hold-and-press behaviour.
+- The overlay's Input panel shows which mode is active.
+
+**How the flag travels.**
+- It reaches the game through `port_hooks.h` (`InputHooks::digital_map_cycle`), set from the latched pads before each tick.
+- Input logs record it in bit 1 of each pad's `connected` byte. Logs of earlier builds replay with the cycle off.
+- Pad scripts and PCSX2 recordings never set it.
+
+### Pressure-sensitive buttons (2026-10-31, User request)
+
+The game puts a DualShock 2 into pressure mode and reads how hard L1/R1 (throttle), L2/R2 (yaw) and □ (map zoom) are pressed (`../subsystems/pad-input.md`). The port always reports a DualShock 2 in pressure mode; each control's pressure comes from its bindings (`src/platform/input.cpp`):
+
+- a key or a plain button: 0 or 255; a trigger or stick axis (`axis:`): its travel 0–255 (pressed above half travel);
+- a gamepad button of a gamepad whose SDL driver reports its pressure: that pressure, with the device's own digital bit (a light press counts as pressed, as on a DualShock 2). Found automatically when the gamepad is opened (log: `port N: gamepad '…', pressure-sensitive buttons (12)`): SDL's HIDAPI PS3 drivers report △ ○ × □, L1, R1 and the d-pad as joystick axes 6–15, L2/R2 as the trigger axes (`SDL_hidapi_ps3.c` of the pinned SDL 3.4.16);
+- `Joy Axis` bindings (`joyaxis:`): any other device that reports a pressure as an axis;
+- with several sources the highest level counts, any press sets the bit.
+
+| Controller | Pressure on the PC |
+|---|---|
+| DualShock 3 / Sixaxis | all 12 buttons, automatically, with Sony's `sixaxis.sys` or DsHidMini in its **SXS** mode (the port sets SDL's hint `SDL_JOYSTICK_HIDAPI_PS3_SIXAXIS_DRIVER`, off by default in SDL on Windows; the environment variable of that name still overrides it). DsHidMini's other modes: XInput/DS4Windows give triggers only; SDF/GPJ are plain HID devices, usable with `joyaxis:` bindings if SDL has a gamepad mapping for them |
+| DualShock 2 | through a USB adapter only. Adapters that present themselves as a PS3 controller (they answer SDL's third-party PS3 check) give all 12 pressures automatically; others only if they report pressures as axes (then `joyaxis:` bindings), most send digital buttons |
+| Xbox, DualShock 4, DualSense, Switch Pro and similar | the two triggers only (as before): with the Modern control type the throttle is on the triggers and analog |
+| Keyboard | 0 or 255 |
+
+Devices without an SDL gamepad mapping are not opened (as before); a mapping can be added with SDL's `SDL_GAMECONTROLLERCONFIG` environment variable. The debug overlay's Input panel (§8.7) shows each port's device, its pressures and the pressures the game read. HIDAPI is part of the SDL3 archive, not a separate dependency (`../decisions/dependencies.md`). Tests: `tests/test_input.cpp`.
 
 Vibration (2026-10-22, User request): the values the game sends with `scePadSetActDirect` (mapped by its `scePadSetActAlign` table: the DualShock 2's small motor on/off, the large motor 0–255) go to the gamepad of that port as SDL rumble (large motor = low-frequency rumble, small = high-frequency at full strength), sent when they change and refreshed every 500 ms while running. The game's VIBRATION option (CONTROLLER SETUP, save data) switches it, as on the PS2; no `settings.json` key. Runs fed from `--pad-script` or a recording keep the pads still. The guest rumble state is untouched (`risks.md`, rumble row). Code: `src/sce/libpad.cpp`, `InputBackend::SetVibration`.
 
@@ -72,17 +206,17 @@ Vibration (2026-10-22, User request): the values the game sends with `scePadSetA
 | Internal resolution 1–8× | frame-sized targets at N×, small shadow/glow targets at 1×, 2D sprites on their native texel grid, sprite edges on native pixel borders (`renderer.md` §1.7) | `presentation.internal_scale`, `--internal-scale` |
 | Movie upscaling | FSR 1 EASU at the internal-resolution factor (ADR-006 §5) | follows the internal resolution; `--movie-upscale` |
 | Anti-aliasing (2026-10-20) | FXAA 3.11 (one pass, quality preset 29, luma from green) or SMAA 1x (three passes, preset HIGH, luma edges) over each flight view's rectangle of the frame buffer, **after the view's 3D and before its HUD**, so HUD lines, text, radio window, menus and the screen fade stay sharp (User request). How the point is found: `BuildFlightDrawLists` records the first DMA tag of each view's 2D overlay table (`port::Render()`, host state only); the DMA walker marks the GIF data where it reaches that tag (`SourceMark::kAntiAlias`); `GsState` puts an `aa_point` entry into the draw list there; the backend copies the target, runs the passes with the view's rectangle as scissor and copies the rectangle back (`src/platform/render/gs/gs_antialias.cpp`). RGB only: the frame buffer's alpha (GS alpha, read by later draws) is kept. Works at every internal scale (it runs on the scaled target). Only scene 2 (flight, in-engine cutscenes) has the point; menus with 3D (hangar, aircraft viewer) are not anti-aliased. **The SMV movies (INTRO, SS01–SS12, STAFF, the MIS briefing movies) are never anti-aliased** (User rule 2026-10-20): they get only the FSR 1 upscaling stage; checked with SS01 at 1× and 2×, SMAA on and off give identical frames (`validation.md` §2n AA-4). Third-party code: `../decisions/dependencies.md` | `presentation.antialiasing`, `--antialiasing` |
-| Frame interpolation (2026-10-22) | above 60 presented frames per second (a 120/144 Hz display with v-sync, or v-sync off with a higher cap), each frame shows the 3D world between the last two game steps: the VU1 program runs of the newest step are repeated with their matrices blended (ADR-002; `validation.md` §2ac). The HUD, 2D, effects the EE projects itself and movies show the newest step. A frame that has to catch up more than one step is shown unblended. Off in validation runs (unless `--frame-interpolation on`) and while fast-forwarding; at 60 Hz nothing changes. Cost (2026-10-23, `validation.md` §2ad): mission 1 at 8× with SMAA on a 4K display, v-sync off, cap 360: 99 fps, 0 ticks dropped; the hangar 80 fps. Since 2026-10-27 the later blended copies of a step reuse its first copy's draws with their new vertex values, without GS processing or texture work again (`validation.md` §2am) | `presentation.frame_interpolation` (file only), `--frame-interpolation` |
+| Frame interpolation (2026-10-22) | above 60 presented frames per second (a 120/144 Hz display with v-sync, or v-sync off with a higher cap), each frame shows the 3D world between the last two game steps: the VU1 program runs of the newest step are repeated with their matrices blended (ADR-002; `validation.md` §2ac). The HUD, 2D, effects the EE projects itself and movies show the newest step. A frame that has to catch up more than one step is shown unblended. Off in validation runs (unless `--frame-interpolation on`) and while fast-forwarding; at 60 Hz nothing changes. Cost (2026-10-23, `validation.md` §2ad): mission 1 at 8× with SMAA on a 4K display, v-sync off, cap 360: 99 fps, 0 ticks dropped; the hangar 80 fps. Since 2026-10-27 the later blended copies of a step reuse its first copy's draws with their new vertex values, without GS processing or texture work again (`validation.md` §2am) | `presentation.frame_interpolation` (GRAPHICS page INTERPOLATION row since 2026-10-30), `--frame-interpolation` |
 | SCREEN RATIO default | on a monitor wider than 4:3 (aspect above 4:3 by more than 2.5 %: 16:9, 16:10, 21:9) the game's SCREEN RATIO option starts at 16:9: the port sets bit 0 of the option byte 0x002A15CC right after `InitOptionData` at boot (`src/game/boot.cpp`, `port::Boot()`), before `ApplyOptionSettings`. Save data loaded later replaces the byte, so a player's saved choice wins; with no save the game shows its own 16:9 mode (anamorphic, all of the game's 16:9 layouts). Validation runs keep the PS2 default (4:3): any pad script, input log, PCSX2 recording, `--memcard` or `--no-memcard` (logged as `SCREEN RATIO default: 4:3 (validation run: PS2 default)`) | `presentation.default_screen_ratio` |
 
-All of them can be changed while the port runs (GRAPHICS page or `settings.json`), and every change applies at once. Checked 2026-10-20 (`validation.md` §2m, ST-1 and ST-2): eight combinations of window mode, v-sync, cap, scale and filter switched during mission 4 gameplay at normal speed. A change of the internal scale rebuilds the render targets: at 6× and 8× this costs one hitch of 0.3–0.6 s (the simulation drops those ticks, as after any host stall); the other settings switch within a frame.
+All of them except the SCREEN RATIO default (applied once at boot) can be changed while the port runs (GRAPHICS page, the debug overlay's Graphics panel (§8.7, development builds) or `settings.json`), and every change applies at once. Checked 2026-10-20 (`validation.md` §2m, ST-1 and ST-2): eight combinations of window mode, v-sync, cap, scale and filter switched during mission 4 gameplay at normal speed. A change of the internal scale rebuilds the render targets: at 6× and 8× this costs one hitch of 0.3–0.6 s (the simulation drops those ticks, as after any host stall); the other settings switch within a frame.
 
 ## 3. GRAPHICS page
 
 The last item of OPTIONS → SCREEN SETTINGS, after HUD UNIT (and after INTERLUDE once that is unlocked). Code: `src/game/graphics_page.*`, hooks marked `port:` in `src/game/options_page.cpp`.
 
 - Opens like SCREEN POSITION and BRIGHTNESS (state 6 → view 3 of the options page) and uses the BRIGHTNESS view's widgets: its outer frames, a typed title "GRAPHICS >", the choice-square glyph, the pulsing box on the chosen square, the crosshair and the help box.
-- Rows (name, chosen value, squares): FULLSCREEN ON / OFF, V-SYNC ON / OFF, FRAME RATE CAP 60–360 FPS, INTERNAL RES. 1X–8X, SCALING FILTER SHARP / SMOOTH, ANTI-ALIASING OFF / FXAA / SMAA (2026-10-20; the panel is one row taller).
+- Rows (name, chosen value, squares): FULLSCREEN ON / OFF, V-SYNC ON / OFF, FRAME RATE CAP 60–360 FPS, INTERNAL RES. 1X–8X, SCALING FILTER SHARP / SMOOTH, ANTI-ALIASING OFF / FXAA / SMAA (2026-10-20; the panel is one row taller). INTERPOLATION ON / OFF (`presentation.frame_interpolation`) sits between V-SYNC and FRAME RATE CAP (User request 2026-10-30, after a player's report that interpolation on a 75 Hz display costs more than it gives on a weak GPU); the rows' frame is one row taller again, 488 × 222 centred at (276, 186).
 - With V-SYNC ON the frame rate cap does not apply: its row shows "V-SYNC" instead of a value, has no squares and the cursor skips it (User request 2026-10-20).
 - Up/down choose the row, left/right the value (clamped, the < > arrows dim at the ends). **Every change applies at once** (User request 2026-10-20): the page hands each new value to the host, which applies it without saving. ACCEPT (× or ○) saves the values to `settings.json`; CANCEL (△) restores the values the page opened with; □ sets the defaults for this display (§1) and applies them. The help box shows the options page's own messages 1 and 3 ("Use Left Analog Stick to adjust", "×: ACCEPT / △: CANCEL / □: DEFAULT").
 - The game's menu tables are not changed: the column-0 definition gets the GRAPHICS item only while the tree is built or its cursors are stored (`GraphicsItemPatch`), and the item ids the page reports are mapped back to the game's (`OptionsSelection`).
@@ -222,6 +356,8 @@ Code: `src/platform/debug/overlay.{h,cpp}`; hook for scene requests: `src/common
 - **Toggle:** the typed character in `"overlay_toggle"` (default `"\"`, matched on SDL text input, so any keyboard layout works), or `"key:<SDL scancode name>"` (e.g. `"key:F12"`).
 - **Input:** while an overlay window has keyboard focus, the keyboard is not mapped to the game's pad; gamepads still reach the game.
 - **Look:** square style (every rounding 0, border 1), drawn in the output pass after the game image at host resolution. `imgui.ini` is not written (`IniFilename = nullptr`).
+- **Graphics panel** (2026-10-31, User request; "Sim: no", presentation only): every presentation setting that applies while the port runs: window mode, windowed size (4:3 and 16:9 choices), v-sync, frame cap (disabled with v-sync on), frame interpolation, internal resolution 1×–8×, scaling filter, anti-aliasing. Each change applies at once for the session, as on the GRAPHICS page (§3); "Save to settings.json" writes the values into the file's own values (session-only command-line values are not saved), "Defaults for this display" sets the §1 defaults (the windowed size and the SCREEN RATIO default stay). Not in the panel: `presentation.default_screen_ratio`, which applies only at boot. The overlay hands the change to the host after it builds the frame (`DebugOverlay::TakePresentationRequest`); `src/main.cpp` applies it like the GRAPHICS page. A GRAPHICS page that is open keeps the values it opened with.
+- **Input panel** (2026-10-31, read-only): per port the host device, whether it reports pressures, the button bits and sticks, whether the map button steps or holds, the 12 pressures from the host, the game's pad type (5 = DualShock 2 pressure mode) and the pressures the game last read (libpad port record +0x40).
 - **Panels** (all read-only, "Sim: no"):
   - *Performance:* presented fps and frame-time graph (240 frames), the "FPS overlay (top right)" checkbox, the renderer's CPU time of the last frame (GS processing, recording) and its texture statistics (textures drawn, GPU decodes, CPU uploads, GPU memory updates, KiB uploaded, texture images held and their MiB; §6), its GPU work of the last frame (render passes, pipeline barriers, frame-buffer copies and their Mpixels), steps this frame, total steps, dropped steps (catch-up limit 4), interpolation alpha, DMA intake per step (GIF/VIF1 qwords, sends, bad chains), last DISPFB/DISPLAY.
   - *Scene:* scene and name, sub-state, previous/next scene, `req`, flags, `frame_count`/`scene_frame` (and unpaused), mission id, and the last 64 `RequestScene`/`RequestSubState` calls with step, `frame_count` and requesting scene.

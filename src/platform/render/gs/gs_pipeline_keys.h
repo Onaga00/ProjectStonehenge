@@ -1,7 +1,8 @@
-// GS draw pipeline keys the game is known to use (gs_vulkan.cpp PipelineKey: blend enable, Vulkan
-// blend factors and op, colour write mask, depth compare op, depth write). Built by warm-up threads
-// at startup (GsBackend::StartPipelineWarmUp), so a new GPU driver compiles them before the first
-// 3D frame instead of inside frames (docs/port/validation.md §2ai). These are the renderer's own
+// GS draw state keys the game is known to use (gs_vulkan.cpp PipelineKey: blend enable, Vulkan
+// blend factors and op, colour write mask, depth compare op, depth write). Their pipelines (SplitKey:
+// without the depth state, and for blended keys without the alpha write, set per draw since
+// 2026-10-30) are built by warm-up threads at startup (GsBackend::StartPipelineWarmUp), so a new GPU
+// driver compiles them before the first 3D frame instead of inside frames (docs/port/validation.md §2ai). These are the renderer's own
 // draw states, not game data.
 //
 // Collected 2026-10-25 with tools/research/pipeline_keys.py from the session logs of every

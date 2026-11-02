@@ -58,8 +58,8 @@ struct AudioSettings {
 };
 
 struct InputSettings {
-    // PS2 control name ("cross", "lx-", …) -> host inputs ("key:Z", "pad:south", "axis:leftx-").
-    std::map<std::string, std::vector<std::string>> bindings;
+    // The key, mouse and gamepad bindings are in controls.ini (platform/controls_file.h; version 1
+    // of settings.json held them as input.bindings).
     // Per player: the Modern variant of the game's CONTROL TYPE (L1/L2 and R1/R2 swapped before
     // the game reads the pad; the save data keeps the Classic type). Default on for both players.
     std::array<bool, 2> modern_controls{true, true};
@@ -84,7 +84,9 @@ enum class SettingsSection { Presentation, Paths, Audio, Input, Debug };
 // Values accepted by the frame cap setting.
 bool IsValidFrameCap(int fps);
 constexpr int kFrameCaps[] = {60, 120, 144, 240, 360};
-constexpr int kSettingsVersion = 1;
+// 2 (2026-10-31): input.bindings moved to controls.ini. A file of another version is rejected
+// (deleted and replaced with the defaults), as every incompatible file.
+constexpr int kSettingsVersion = 2;
 constexpr int kMaxInternalScale = 8;
 InputSettings DefaultInputSettings();
 // The defaults on `display` (User requests 2026-10-20 and 2026-10-22): fullscreen, v-sync on, FXAA,

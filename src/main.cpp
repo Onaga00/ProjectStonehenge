@@ -27,6 +27,7 @@
 #include "game/game.h"
 #include "platform/audio.h"
 #include "platform/command_line.h"
+#include "platform/controls_file.h"
 #include "platform/crash.h"
 #include "platform/debug/overlay.h"
 #include "platform/elf_loader.h"
@@ -123,6 +124,8 @@ struct TickInputFeed {
         }
         latched[0] = pads[0];
         latched[1] = pads[1];
+        // The digital map cycle travels with the pads (input logs), so replays see it too.
+        for (int p = 0; p < 2; ++p) port::Input().digital_map_cycle[p] = pads[p].map_cycle;
         if (record.IsOpen() && vblank != 0) record.Write(platform::TickInput{vblank, {pads[0], pads[1]}});
     }
 };
@@ -366,6 +369,7 @@ port::GraphicsOptions ToGraphicsOptions(const PresentationSettings& p) {
     g.internal_scale = p.internal_scale;
     g.smooth_filter = p.filter == ScaleFilter::Smooth;
     g.antialiasing = static_cast<s32>(p.antialiasing);
+    g.frame_interpolation = p.frame_interpolation;
     return g;
 }
 
@@ -376,6 +380,7 @@ void ApplyGraphicsOptions(const port::GraphicsOptions& g, PresentationSettings& 
     p.internal_scale = std::clamp(static_cast<int>(g.internal_scale), 1, platform::kMaxInternalScale);
     p.filter = g.smooth_filter ? ScaleFilter::Smooth : ScaleFilter::Sharp;
     if (g.antialiasing >= 0 && g.antialiasing <= 2) p.antialiasing = static_cast<AntiAliasing>(g.antialiasing);
+    p.frame_interpolation = g.frame_interpolation;
 }
 
 // Reloads settings.json when it changes on disk, so values can be edited while the port runs.
@@ -459,6 +464,7 @@ int Run(int argc, char** argv) {
     AC04_LOG_INFO("startup", "OS: %s", OperatingSystemDescription().c_str());
     AC04_LOG_INFO("startup", "user data: %s", PathToUtf8(paths.user_data).c_str());
 
+    PrepareInputHints();  // pressure-sensitive buttons of DualShock 3 pads (input.h)
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
         AC04_LOG_ERROR("startup", "SDL_Init failed: %s", SDL_GetError());
         MessageText m;
@@ -528,12 +534,13 @@ int Run(int argc, char** argv) {
     }
 
     render::Renderer renderer;
+    renderer.SetGpuProfile(cl.options.gpu_profile);
     if (!renderer.Init(window.Handle(), settings.Get().presentation, cl.options.vk_validation,
                        paths.pipeline_cache_file, error)) {
         AC04_LOG_ERROR("renderer", "%s", error.c_str());
         MessageText m;
         m.headline = "The graphics renderer could not start";
-        m.explanation = "The port needs a graphics card (GPU) with Vulkan 1.2 support.";
+        m.explanation = "The port needs a graphics card (GPU) with Vulkan 1.2 support and a driver from 2021 or later.";
         m.steps = {"Update the graphics driver.",
                    "On a computer with two GPUs, make sure the port runs on the dedicated one (Windows graphics settings)."};
         m.details = {{"Reason", error}, {"Session log", PathToUtf8(log::FilePath())}};
@@ -595,7 +602,13 @@ int Run(int argc, char** argv) {
 
     InputBackend input;
     input.ApplySettings(settings.Get().input);
+    // Key, mouse and gamepad bindings (controls.ini, written with the defaults when missing).
+    ControlsFile controls_file(paths.controls_file);
+    input.ApplyControls(controls_file.Load());
     input.Start();
+    // The mouse steers only in flight, with the window focused and the debug overlay closed; the
+    // window then keeps the pointer (relative mouse mode).
+    bool mouse_steers = false;
 
     FramePacer pacer;
     pacer.SetCap(EffectiveFrameCap(settings.Get().presentation));
@@ -626,10 +639,11 @@ int Run(int argc, char** argv) {
         else renderer.ApplySettings(s.presentation);
         window.ApplyMode(s.presentation);
         pacer.SetCap(EffectiveFrameCap(s.presentation));
-        AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d%s, %s, internal scale %d, anti-aliasing %s",
+        AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d%s, %s, internal scale %d, anti-aliasing %s, frame interpolation %s",
                       ToString(s.presentation.filter), s.presentation.vsync ? "on" : "off", s.presentation.frame_cap,
                       s.presentation.vsync ? " (not used)" : "", ToString(s.presentation.window_mode),
-                      s.presentation.internal_scale, ToString(s.presentation.antialiasing));
+                      s.presentation.internal_scale, ToString(s.presentation.antialiasing),
+                      s.presentation.frame_interpolation ? "on" : "off");
     });
     settings.Subscribe(SettingsSection::Audio, [&](const Settings& s) { audio.ApplySettings(s.audio); });
     settings.Subscribe(SettingsSection::Input, [&](const Settings& s) { input.ApplySettings(s.input); });
@@ -648,6 +662,18 @@ int Run(int argc, char** argv) {
     // What the CONTROLLER SETUP and GRAPHICS pages changed in a tick (port_hooks.h): applied at
     // once; saved to settings.json on ACCEPT (file values, so session-only overrides are not saved).
     // The GRAPHICS page hands over every change while it is open (save_graphics only on ACCEPT).
+    // Writes a change into settings.json's own values (session-only command-line values are not saved).
+    const auto save_settings_file = [&](const std::function<void(Settings&)>& change) {
+        SettingsStore saved;
+        std::vector<std::string> ignored;
+        saved.Load(paths.settings_file, ignored);  // a rejected file gives the defaults
+        Settings file = saved.Get();
+        change(file);
+        saved.Replace(file);
+        std::string save_error;
+        if (!saved.Save(&save_error)) AC04_LOG_ERROR("settings", "cannot save settings.json: %s", save_error.c_str());
+        watcher.Remember();
+    };
     const auto apply_menu_requests = [&]() {
         port::MenuOptions& menu = port::Menu();
         if (!menu.set_modern_controls && !menu.set_graphics) return;
@@ -664,16 +690,20 @@ int Run(int argc, char** argv) {
         Settings next = settings.Get();
         change(next);
         settings.Replace(next);
-        if (!save) return;
-        SettingsStore saved;
-        std::vector<std::string> ignored;
-        saved.Load(paths.settings_file, ignored);  // a rejected file gives the defaults
-        Settings file = saved.Get();
-        change(file);
-        saved.Replace(file);
-        std::string save_error;
-        if (!saved.Save(&save_error)) AC04_LOG_ERROR("settings", "cannot save settings.json: %s", save_error.c_str());
-        watcher.Remember();
+        if (save) save_settings_file(change);
+    };
+    // The debug overlay's Graphics panel (presentation only): applied at once, saved on request.
+    const auto apply_overlay_requests = [&]() {
+        const auto request = overlay.TakePresentationRequest();
+        if (!request) return;
+        const auto change = [&](Settings& s) { s.presentation = request->values; };
+        Settings next = settings.Get();
+        change(next);
+        settings.Replace(next);
+        if (request->save) {
+            save_settings_file(change);
+            AC04_LOG_INFO("settings", "presentation saved to settings.json from the debug overlay");
+        }
     };
 
     // Game thread (ADR-002): SDK layer wired to the disc, the pads and the IOP stand-ins, then the
@@ -1047,6 +1077,19 @@ int Run(int argc, char** argv) {
             input.HandleEvent(event);
         }
         watcher.Poll();
+        if (controls_file.Changed()) {
+            AC04_LOG_INFO("input", "controls.ini changed on disk, reloaded");
+            input.ApplyControls(controls_file.Load());
+        }
+        {
+            const bool focused = (SDL_GetWindowFlags(window.Handle()) & SDL_WINDOW_INPUT_FOCUS) != 0;
+            const bool want = input.MouseSteers() && g_feed->Live() && port::Input().in_flight[0] && focused &&
+                              !overlay.Visible();
+            if (want != mouse_steers) {
+                SDL_SetWindowRelativeMouseMode(window.Handle(), want);
+                mouse_steers = want;
+            }
+        }
         input.Update(/*keyboard_captured=*/overlay.WantsKeyboard());
         // Fixed 59.94 Hz simulation: release the ticks due since the last frame (catch-up <= 4);
         // the game thread runs them and parks again before the frame is presented.
@@ -1109,10 +1152,9 @@ int Run(int argc, char** argv) {
                 }
             }
             ++ticks_run;
-            if (t > 0) {
-                SDL_PumpEvents();
-                input.Update(/*keyboard_captured=*/overlay.WantsKeyboard());
-            }
+            if (t > 0) SDL_PumpEvents();
+            input.StepTick(mouse_steers);  // the mouse stick and wheel presses advance once per tick
+            input.Update(/*keyboard_captured=*/overlay.WantsKeyboard());
             {
                 // Port options the menu pages show (port_hooks.h), current before the tick.
                 port::MenuOptions& menu = port::Menu();
@@ -1122,6 +1164,7 @@ int Run(int argc, char** argv) {
                 g_feed->modern = menu.modern_controls;
             }
             g_feed->Latch(game.VBlankCount() + 1);
+            port::Input().in_flight = {};  // set again by the game while it reads the flight controls
             if (!game.RunTicks(1)) {
                 if (!game_end_logged) AC04_LOG_WARN("game", "the game thread has ended");
                 game_end_logged = true;
@@ -1202,8 +1245,14 @@ int Run(int argc, char** argv) {
             od.vif1_sends = dma.sends[1];
             od.bad_chains = dma.bad_chains;
             od.dispenv = dma.dispenv;
+            od.presentation = settings.Get().presentation;
+            for (int port = 0; port < 2; ++port) {
+                od.pads[static_cast<size_t>(port)] = input.Port(port);
+                od.pad_devices[static_cast<size_t>(port)] = input.DeviceInfo(port);
+            }
             if (overlay.Visible() || overlay.FpsVisible()) render_thread.WaitIdle();  // ImGui: see the loop start
             overlay.BuildFrame(od);
+            apply_overlay_requests();
         }
         // Development builds: --exit-at ends the session normally (dumps written at exit).
         if (cl.options.exit_at && game.VBlankCount() >= *cl.options.exit_at) running = false;

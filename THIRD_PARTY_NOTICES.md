@@ -21,7 +21,7 @@ One row per dependency:
 | Name | Version / commit | License | URL | Modified | Included as |
 |---|---|---|---|---|---|
 
-| SDL3 | 3.4.16 (release archive) | zlib | https://github.com/libsdl-org/SDL | no | FetchContent (URL_HASH SHA256) |
+| SDL3 | 3.4.16 (release archive) | zlib; the archive also contains HIDAPI (`src/hidapi`, Alan Ott / Signal 11 Software and contributors, compiled in: SDL's HIDAPI gamepad drivers, e.g. the PS3 drivers that report DualShock 3 pressures), offered under GPL-3.0, BSD-style or the original HIDAPI license; this project uses it under **GPL-3.0** | https://github.com/libsdl-org/SDL | no | FetchContent (URL_HASH SHA256) |
 | Vulkan-Headers | vulkan-sdk-1.4.363.0 | Apache-2.0 (some files MIT) | https://github.com/KhronosGroup/Vulkan-Headers | no | FetchContent (URL_HASH SHA256) |
 | volk | vulkan-sdk-1.4.363.0 | MIT | https://github.com/zeux/volk | no | FetchContent (URL_HASH SHA256) |
 | VulkanMemoryAllocator | v3.4.0 | MIT | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | no | FetchContent (URL_HASH SHA256) |

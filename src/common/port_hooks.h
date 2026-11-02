@@ -20,11 +20,12 @@ struct GraphicsOptions {
     s32 internal_scale = 1;   // 1-8
     bool smooth_filter = false;
     s32 antialiasing = 0;     // 0 off, 1 FXAA, 2 SMAA
+    bool frame_interpolation = true;
 
     bool operator==(const GraphicsOptions& o) const {
         return fullscreen == o.fullscreen && vsync == o.vsync && frame_cap == o.frame_cap &&
                internal_scale == o.internal_scale && smooth_filter == o.smooth_filter &&
-               antialiasing == o.antialiasing;
+               antialiasing == o.antialiasing && frame_interpolation == o.frame_interpolation;
     }
     bool operator!=(const GraphicsOptions& o) const { return !(*this == o); }
 };
@@ -60,6 +61,19 @@ struct BootOptions {
 };
 
 BootOptions& Boot();
+
+// Input features of the port baseline (User approval 2026-10-31, docs/port/port-features.md §1).
+struct InputHooks {
+    // Set by the host before each tick from the latched pads (recorded in input logs): the
+    // player's devices give □ no pressure, so the HUD's map button uses the cycle the original
+    // has for a DualShock 2 in analog mode (radar, map 1/4, 1/2, whole map) instead of holding.
+    std::array<bool, 2> digital_map_cycle{};
+    // Set by the game while the tick reads the player's flight controls (ReadPlayerControls);
+    // cleared by the host before each tick. The mouse steers only in flight.
+    std::array<bool, 2> in_flight{};
+};
+
+InputHooks& Input();
 
 // Where each flight view's 2D overlay begins in the frame's DMA lists, for the optional
 // anti-aliasing pass (presentation.antialiasing): BuildFlightDrawLists records the first tag of each

@@ -121,7 +121,7 @@ private:
 };
 
 bool operator==(const InputSettings& a, const InputSettings& b) {
-    return a.bindings == b.bindings && a.modern_controls == b.modern_controls;
+    return a.modern_controls == b.modern_controls;
 }
 
 }  // namespace
@@ -169,35 +169,8 @@ bool IsValidFrameCap(int fps) {
 }
 
 InputSettings DefaultInputSettings() {
-    // Keyboard and SDL3 gamepad defaults. Left stick on WASD, right stick on IJKL, d-pad on the
-    // arrow keys. The game receives the exact PS2 pad bytes built from these (input backend).
-    InputSettings s;
-    auto& b = s.bindings;
-    b["cross"] = {"key:Z", "pad:south"};
-    b["circle"] = {"key:X", "pad:east"};
-    b["square"] = {"key:C", "pad:west"};
-    b["triangle"] = {"key:V", "pad:north"};
-    b["l1"] = {"key:Q", "pad:leftshoulder"};
-    b["r1"] = {"key:E", "pad:rightshoulder"};
-    b["l2"] = {"key:1", "axis:lefttrigger+"};
-    b["r2"] = {"key:3", "axis:righttrigger+"};
-    b["l3"] = {"key:F", "pad:leftstick"};
-    b["r3"] = {"key:H", "pad:rightstick"};
-    b["start"] = {"key:Return", "pad:start"};
-    b["select"] = {"key:Backspace", "pad:back"};
-    b["up"] = {"key:Up", "pad:dpup"};
-    b["down"] = {"key:Down", "pad:dpdown"};
-    b["left"] = {"key:Left", "pad:dpleft"};
-    b["right"] = {"key:Right", "pad:dpright"};
-    b["lx-"] = {"key:A", "axis:leftx-"};
-    b["lx+"] = {"key:D", "axis:leftx+"};
-    b["ly-"] = {"key:W", "axis:lefty-"};
-    b["ly+"] = {"key:S", "axis:lefty+"};
-    b["rx-"] = {"key:J", "axis:rightx-"};
-    b["rx+"] = {"key:L", "axis:rightx+"};
-    b["ry-"] = {"key:I", "axis:righty-"};
-    b["ry+"] = {"key:K", "axis:righty+"};
-    return s;
+    // The bindings' defaults are in controls.ini (platform/controls_file.cpp).
+    return InputSettings{};
 }
 
 SettingsStore::SettingsStore() : settings_(DefaultSettings(g_DefaultsDisplay)) {}
@@ -259,30 +232,7 @@ bool SettingsStore::LoadFromText(const std::string& text, std::vector<std::strin
     if (const json* p = r.Section("audio", {"on_focus_loss"})) {
         r.Enum(p, "audio", "on_focus_loss", kFocusLoss, s.audio.on_focus_loss);
     }
-    if (const json* p = r.Section("input", {"bindings", "modern_controls"})) {
-        auto it = p->find("bindings");
-        if (it != p->end()) {
-            if (!it->is_object()) {
-                r.Invalid("input", "bindings");
-            } else {
-                for (const auto& item : it->items()) {
-                    const std::string& control = item.key();
-                    if (!s.input.bindings.count(control)) {
-                        r.Warn("input.bindings." + control + ": unknown PS2 control");
-                        continue;
-                    }
-                    std::vector<std::string> list;
-                    bool ok = item.value().is_array();
-                    if (ok)
-                        for (const auto& e : item.value()) {
-                            if (!e.is_string()) ok = false;
-                            else list.push_back(e.get<std::string>());
-                        }
-                    if (ok) s.input.bindings[control] = list;
-                    else r.Invalid("input.bindings", control.c_str());
-                }
-            }
-        }
+    if (const json* p = r.Section("input", {"modern_controls"})) {
         auto mc = p->find("modern_controls");
         if (mc != p->end()) {
             if (mc->is_array() && mc->size() == 2 && (*mc)[0].is_boolean() && (*mc)[1].is_boolean()) {
@@ -328,9 +278,6 @@ std::string SettingsStore::ToText() const {
     root["paths"]["iso"] = s.paths.iso;
     root["audio"]["on_focus_loss"] = ToString(s.audio.on_focus_loss);
     auto& in = root["input"];
-    json bindings = json::object();
-    for (const auto& [control, list] : s.input.bindings) bindings[control] = list;
-    in["bindings"] = bindings;
     in["modern_controls"] = json::array({s.input.modern_controls[0], s.input.modern_controls[1]});
     auto& d = root["debug"];
     d["overlay_enabled"] = s.debug.overlay_enabled;

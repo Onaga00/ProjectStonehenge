@@ -1,6 +1,6 @@
 # Project status
 
-Ace Combat 04 (SLUS_201.52) PC port. Phase 3 (port skeleton) done (milestones A–E); architecture decisions ADR-001–008 accepted. Phase 4, translation in vertical slices (ADR-007), started 2026-10-13 with S1 (section 7). Details: `README.md` (index).
+Ace Combat 04 (SLUS_201.52) PC port. Phase 3 (port skeleton) done (milestones A–E); architecture decisions ADR-001–009 accepted. Phase 4, translation in vertical slices (ADR-007), started 2026-10-13 with S1 (section 7). Details: `README.md` (index).
 
 ## 1. Decompilation status
 
@@ -75,7 +75,7 @@ Also before release: a folder memory card round trip with PCSX2 (needs the port'
 |---|---|---|
 | Memory model | B: guest memory, 32-bit PS2 addresses | ADR-001 Accepted |
 | Threading and timing | A: fixed 59.94 Hz step, decoupled interpolated presentation | ADR-002 Accepted |
-| Rendering | C: own Vulkan renderer for the AC04 GS subset (Vulkan 1.2) | ADR-003 Accepted |
+| Rendering | C: own Vulkan renderer for the AC04 GS subset (Vulkan 1.2 with `VK_EXT_extended_dynamic_state`) | ADR-003, ADR-009 Accepted |
 | Audio | B: HLE at the RPC boundary with own mixer | ADR-004 Accepted |
 | User data | everything under `%LOCALAPPDATA%\ProjectStonehenge\` (`saves\` folder card, `settings.json`, `logs\` last session only, crash handler) | ADR-005 (revised) |
 | Scaling filter | two filters, `sharp` and `smooth`, in `settings.json`; settings struct + JSON + change notification, no menu yet | ADR-006 §3 |
@@ -122,6 +122,13 @@ All previously open decisions approved as recommended:
 |---|---|---|
 | GS pipeline hitches on a new GPU driver | fixed: the 34 known GS pipelines are built at startup on warm-up threads, and a Vulkan pipeline cache file is kept in the new `cache\` user-data folder (approved); open: the User's check on an NVIDIA PC with cleared driver caches | `port/validation.md` §2ai, ADR-005 §2 |
 | Renderer CPU work on a second thread | built after the measurement (RT-1): GS processing, interpolation, recording and present run on a render thread beside the game ticks, one frame in flight; game logic unchanged (regression identical), +22–48 % frames per second at v-sync off; the VIF/VU1 work stays on the game thread | `port/validation.md` §2ai, §2aj; ADR-002 "Render thread" |
+
+### Decided by the User (2026-10-31)
+
+| Decision | Choice | Record |
+|---|---|---|
+| Pressure-sensitive buttons | DualShock 3 (sixaxis.sys / DsHidMini SXS) and PS3-compatible DualShock 2 adapters give the game its pressures; built, waiting for the User's hardware check | `port/port-features.md` §1, `subsystems/pad-input.md` |
+| Controls | bindings in a new `controls.ini` (INI, actions for the keyboard), AC7-style keyboard defaults, mouse as a stick in flight, the original analog-mode map cycle for pads without □ pressure; `settings.json` version 2 (older files replaced with the defaults); built, waiting for the User's live check and the AC7 keys marked "ours" | `port/port-features.md` §1, `decisions/port-baseline.md` |
 
 ### Open for the User
 

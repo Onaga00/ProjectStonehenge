@@ -159,7 +159,7 @@ SDK under the pipeline: `sceCdInit`, `sceCdMmode`, `sceCdGetDiskType`, `sceCdDis
 | 0x00101298 | `UpdatePadConnection` | understood (Sony sample-style mode state machine) |
 | 0x001011B0 | `ReadPadData` | understood |
 | 0x001011F0 | `InitPadPort` | understood |
-| 0x00101858 | `ConvertPadInput` | understood; button layout tables 0x0029FDC0/0x0029FE08/0x0029FE50/0x0029FE98 = partly |
+| 0x00101858 | `ConvertPadInput` | understood; button layout tables 0x0029FDC0/0x0029FE08/0x0029FE50/0x0029FE98: understood 2026-10-31 (`../subsystems/pad-input.md`) |
 | 0x00101688 | `ScalePadAxis` | understood |
 | 0x00101CF0 / 0x00101D80 / 0x00101E28 | `UpdatePadButtonEdges` / `BuildPadButtonMap` / `UpdateMappedPadButtons` | understood; masks 0x0029FEE0, maps 0x0029FF20/40/60 = partly |
 | 0x00102010 / 0x00102488 / 0x001024C0 / 0x00102530 / 0x00102620 | vibration helpers | understood |

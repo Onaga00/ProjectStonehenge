@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "platform/render/gs/gs_state.h"
+#include "platform/render/gpu_profiler.h"
 #include "platform/render/gs/gs_vulkan.h"
 #include "platform/render/movie_upscaler.h"
 #include "platform/render/vk_context.h"
@@ -53,6 +54,8 @@ public:
     bool DrawFrame();
 
     void SetOverlayHook(OverlayHook hook) { overlay_hook_ = std::move(hook); }
+    // --gpu-profile: GPU time per section of the frame (gpu_profiler.h), logged at shutdown. Before Init.
+    void SetGpuProfile(bool detailed) { gpu_profile_ = detailed; }
 
     VkContext& Context() { return ctx_; }
     VkRenderPass OutputRenderPass() const { return render_pass_; }
@@ -141,6 +144,7 @@ private:
     bool ReadbackImage(VkImage image, int width, int height, std::vector<uint8_t>& rgba);
     void LoadPipelineCache();
     void SavePipelineCache();
+    void LogGpuTime() const;
 
     SDL_Window* window_ = nullptr;
     int window_w_ = -1, window_h_ = -1;  // SetWindowPixelSize; -1 = ask SDL
@@ -185,8 +189,13 @@ private:
     std::uint64_t stat_upload_bytes_ = 0, stat_uploads_ = 0, stat_decodes_ = 0, stat_memory_updates_ = 0,
                   stat_textures_ = 0;
     std::uint64_t stat_render_passes_ = 0, stat_barriers_ = 0, stat_copies_ = 0, stat_copy_pixels_ = 0;
+    std::uint64_t stat_draws_ = 0, stat_pipeline_binds_ = 0, stat_push_constants_ = 0, stat_texture_binds_ = 0,
+                  stat_depth_state_sets_ = 0;
     std::array<std::uint64_t, 7> stat_kind_copies_{}, stat_kind_pixels_{};
     std::uint64_t stat_blend_processed_ = 0, stat_blend_replayed_ = 0;
+
+    GpuProfiler gpu_profiler_;
+    bool gpu_profile_ = false;
 
     gs::GsState gs_state_;
     gs::GsBackend gs_backend_;

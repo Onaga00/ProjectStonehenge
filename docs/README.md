@@ -39,6 +39,7 @@ Reorganised again 2026-10-22 (no content removed; merged documents keep their se
 | `subsystems/frontend.md` | scene 4: title, menus, options, briefing, in-menu movies, loading screen |
 | `subsystems/mission-flow.md` | scene 2: flight scene sub-states, mission setup, rules and event script, cutscenes, replay and demo, pause menus; "Mission load": exact creation and allocation order up to the first gameplay frame (slice 5 block A) |
 | `subsystems/flight.md` | player aircraft: controls, flight model, landing gear, collision response |
+| `subsystems/pad-input.md` | pad modes and mapping tables; which actions read DualShock 2 button pressures (throttle, yaw, map zoom) |
 | `subsystems/ai.md` | enemy and friendly units |
 | `subsystems/weapons.md` | projectiles, damage, terrain and unit collision |
 | `subsystems/camera-hud.md` | cameras and the HUD |
@@ -77,7 +78,7 @@ Reorganised again 2026-10-22 (no content removed; merged documents keep their se
 
 | File | Contents |
 |---|---|
-| `decisions/ADR-001-memory-model.md` … `decisions/ADR-008-vs-lan-play.md` | architecture decisions (status in each file); ADR-007 translation strategy (Accepted), ADR-008 VS LAN play (Accepted, option A) |
+| `decisions/ADR-001-memory-model.md` … `decisions/ADR-009-gpu-dynamic-depth-state.md` | architecture decisions (status in each file); ADR-007 translation strategy (Accepted), ADR-008 VS LAN play (Accepted, option A), ADR-009 `VK_EXT_extended_dynamic_state` required, GS draws share pipelines (Accepted 2026-10-30) |
 | `decisions/port-baseline.md` | approved modern-port features and candidates |
 | `decisions/dependencies.md` | third-party dependencies: approved, added, options |
 | `decisions/naming-convention.md` | naming rules and the analysis behind them |
@@ -90,7 +91,7 @@ Using and building on the port:
 |---|---|
 | `port/port-features.md` | what the port adds and how it is built: settings (where they live, rules, display defaults, every `settings.json` key), presentation, the GRAPHICS page, Modern control types, the port-owned guest memory, renderer caches, the frame-rate overlay; §8 the debug overlay (features, dependency, rules) |
 | `port/command-line.md` | every command-line parameter, grouped (all builds; development builds: disc and card, start points, input, run control, dumps, renderer), development-build keys, recipes, the disc check at start |
-| `port/renderer.md` | renderer studies and work: §1 internal rendering resolution 1-8x (study, as-built table §1.7, anti-aliasing and anisotropic filtering feasibility §1.8); §2 what CPU work could move to the GPU, GPU texture decoding, generation-based texture cache and per-texture images (plan, step 1 measurement, as built 2026-10-22) |
+| `port/renderer.md` | renderer studies and work: §1 internal rendering resolution 1-8x (study, as-built table §1.7, anti-aliasing and anisotropic filtering feasibility §1.8); §2 what CPU work could move to the GPU, GPU texture decoding, generation-based texture cache and per-texture images (plan, step 1 measurement, as built 2026-10-22); §3 GPU time measurement (timestamps, `--gpu-profile`, 2026-10-30) |
 
 Translation progress and planning:
 

@@ -11,6 +11,7 @@ struct Paths {
     std::filesystem::path saves;          // user_data\saves\  (PCSX2 folder memory card root)
     std::filesystem::path logs;           // user_data\logs\   (last session only)
     std::filesystem::path settings_file;  // user_data\settings.json
+    std::filesystem::path controls_file;  // user_data\controls.ini (key, mouse and gamepad bindings)
     std::filesystem::path cache;          // user_data\cache\  (renderer caches; deletable)
     std::filesystem::path pipeline_cache_file;  // cache\pipelines.bin (Vulkan pipeline cache data)
     std::filesystem::path exe_dir;        // folder of the executable (read only)

@@ -246,7 +246,7 @@ void DebugOverlay::BuildFrame(const OverlayFrameData& data) {
     }
     ImGui::SetNextWindowPos(Scaled(8, 8), ImGuiCond_FirstUseEver);
     ImGui::Begin("Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Read-only panels (debug layer)");
+    ImGui::TextUnformatted("Debug layer panels (Graphics: presentation only)");
     ImGui::Checkbox("Performance", &show_perf_);
     ImGui::SameLine();
     ImGui::Checkbox("Scene", &show_scene_);
@@ -254,6 +254,9 @@ void DebugOverlay::BuildFrame(const OverlayFrameData& data) {
     ImGui::Checkbox("Memory", &show_memory_);
     ImGui::SameLine();
     ImGui::Checkbox("Log", &show_log_);
+    ImGui::Checkbox("Graphics", &show_graphics_);
+    ImGui::SameLine();
+    ImGui::Checkbox("Input", &show_input_);
     ImGui::TextDisabled("Toggle: %s", toggle_text_.c_str());
     ImGui::End();
 
@@ -261,6 +264,8 @@ void DebugOverlay::BuildFrame(const OverlayFrameData& data) {
     if (show_scene_) DrawScene();
     if (show_memory_) DrawMemory();
     if (show_log_) DrawLog();
+    if (show_graphics_) DrawGraphics(data);
+    if (show_input_) DrawInput(data);
     if (unfocus_pending_) {
         ImGui::SetWindowFocus(nullptr);
         unfocus_pending_ = false;
@@ -558,6 +563,161 @@ void DebugOverlay::DrawLog() {
         if (at_bottom) ImGui::SetScrollHereY(1.0f);
     }
     ImGui::EndChild();
+    ImGui::End();
+}
+
+std::optional<PresentationRequest> DebugOverlay::TakePresentationRequest() {
+    std::optional<PresentationRequest> r = std::move(presentation_request_);
+    presentation_request_.reset();
+    return r;
+}
+
+// Every presentation setting that applies while the port runs (port-features.md §2: the GRAPHICS
+// page's rows and the windowed size). Not here: presentation.default_screen_ratio, which the port
+// applies once at boot (the game's SCREEN RATIO option itself is in its OPTIONS menu).
+void DebugOverlay::DrawGraphics(const OverlayFrameData& data) {
+    ImGui::SetNextWindowPos(Scaled(940, 8), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(Scaled(380, 0), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Graphics", &show_graphics_)) {
+        ImGui::End();
+        return;
+    }
+    PresentationSettings p = data.presentation;
+    bool changed = false;
+    const auto combo = [&](const char* label, int& index, const char* const* names, int count) {
+        if (ImGui::Combo(label, &index, names, count)) changed = true;
+    };
+
+    int mode = p.window_mode == WindowMode::Fullscreen ? 0 : 1;
+    const char* const kModes[] = {"Fullscreen", "Windowed"};
+    combo("Window", mode, kModes, 2);
+    p.window_mode = mode == 0 ? WindowMode::Fullscreen : WindowMode::Windowed;
+
+    // Windowed client size: fixed choices (4:3 and 16:9), or the current one.
+    static constexpr int kSizes[][2] = {{960, 720},   {1280, 960},  {1600, 1200}, {1920, 1440},
+                                        {1280, 720},  {1600, 900},  {1920, 1080}, {2560, 1440}};
+    char current[32];
+    std::snprintf(current, sizeof(current), "%d x %d", p.window_width, p.window_height);
+    ImGui::BeginDisabled(p.window_mode != WindowMode::Windowed);
+    if (ImGui::BeginCombo("Window size", current)) {
+        for (const auto& sz : kSizes) {
+            char text[32];
+            std::snprintf(text, sizeof(text), "%d x %d", sz[0], sz[1]);
+            const bool selected = sz[0] == p.window_width && sz[1] == p.window_height;
+            if (ImGui::Selectable(text, selected) && !selected) {
+                p.window_width = sz[0];
+                p.window_height = sz[1];
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+
+    if (ImGui::Checkbox("V-sync", &p.vsync)) changed = true;
+
+    int cap = 0;
+    for (int i = 0; i < static_cast<int>(std::size(kFrameCaps)); ++i)
+        if (kFrameCaps[i] == p.frame_cap) cap = i;
+    const char* const kCaps[] = {"60 fps", "120 fps", "144 fps", "240 fps", "360 fps"};
+    static_assert(std::size(kCaps) == std::size(kFrameCaps));
+    ImGui::BeginDisabled(p.vsync);
+    combo("Frame cap", cap, kCaps, static_cast<int>(std::size(kCaps)));
+    ImGui::EndDisabled();
+    if (p.vsync) ImGui::TextDisabled("  frame cap: not used with v-sync on");
+    p.frame_cap = kFrameCaps[cap];
+
+    if (ImGui::Checkbox("Frame interpolation", &p.frame_interpolation)) changed = true;
+
+    int scale = std::clamp(p.internal_scale, 1, kMaxInternalScale) - 1;
+    const char* const kScales[] = {"1x (native)", "2x", "3x", "4x", "5x", "6x", "7x", "8x"};
+    static_assert(std::size(kScales) == kMaxInternalScale);
+    combo("Internal resolution", scale, kScales, kMaxInternalScale);
+    p.internal_scale = scale + 1;
+
+    int filter = p.filter == ScaleFilter::Sharp ? 0 : 1;
+    const char* const kFilters[] = {"Sharp", "Smooth"};
+    combo("Scaling filter", filter, kFilters, 2);
+    p.filter = filter == 0 ? ScaleFilter::Sharp : ScaleFilter::Smooth;
+
+    int aa = static_cast<int>(p.antialiasing);
+    const char* const kAa[] = {"Off", "FXAA", "SMAA"};
+    combo("Anti-aliasing", aa, kAa, 3);
+    p.antialiasing = static_cast<AntiAliasing>(aa);
+
+    ImGui::Separator();
+    bool save = false;
+    if (ImGui::Button("Defaults for this display")) {
+        // As the GRAPHICS page's DEFAULT: the windowed size and the SCREEN RATIO default stay.
+        const PresentationSettings d = DefaultSettings(DefaultsDisplay()).presentation;
+        p.window_mode = d.window_mode;
+        p.vsync = d.vsync;
+        p.frame_cap = d.frame_cap;
+        p.frame_interpolation = d.frame_interpolation;
+        p.internal_scale = d.internal_scale;
+        p.filter = d.filter;
+        p.antialiasing = d.antialiasing;
+        changed = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save to settings.json")) save = true;
+    ImGui::TextDisabled("Changes apply at once for this session.");
+    ImGui::TextDisabled("Applied at the next start only: SCREEN RATIO default (%s).", ToString(p.default_screen_ratio));
+    ImGui::End();
+    if (changed || save) presentation_request_ = PresentationRequest{p, save};
+}
+
+// Host input per port as the game will read it (scePadRead bytes, before the Modern swap), the
+// device's pressure support, and the game's own pad type and the pressures it last read.
+void DebugOverlay::DrawInput(const OverlayFrameData& data) {
+    ImGui::SetNextWindowPos(Scaled(940, 330), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(Scaled(380, 0), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Input", &show_input_)) {
+        ImGui::End();
+        return;
+    }
+    static constexpr const char* kPressureNames[12] = {"Right", "Left", "Up",     "Down", "Triangle", "Circle",
+                                                       "Cross", "Square", "L1",   "R1",   "L2",       "R2"};
+    const u32 ctx = PeekOr<u32>(kMainContextPointer, 0);
+    for (int port = 0; port < 2; ++port) {
+        ImGui::PushID(port);
+        const PadDeviceInfo& dev = data.pad_devices[static_cast<size_t>(port)];
+        const PadState& st = data.pads[static_cast<size_t>(port)];
+        if (dev.name.empty()) {
+            ImGui::Text("Port %d: %s", port + 1, port == 0 ? "keyboard" : "no gamepad");
+        } else {
+            ImGui::Text("Port %d: %s", port + 1, dev.name.c_str());
+            if (dev.pressure_buttons > 0) ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "  pressure-sensitive buttons: %d", dev.pressure_buttons);
+            else ImGui::TextDisabled("  pressure: triggers only (other buttons 0 or 255)");
+        }
+        ImGui::Text("  buttons %04X  L %02X %02X  R %02X %02X", st.buttons, st.lx, st.ly, st.rx, st.ry);
+        if (st.connected)
+            ImGui::Text("  map button: %s", st.map_cycle ? "each press steps the map (digital)" : "held, zoom by pressure");
+        // Game side: pad type of ctx->pad_state[port] and the pressures of the read it converted.
+        const u32 type = ctx != 0 ? PeekOr<u32>(ctx + 0x210 + 0x50u * static_cast<u32>(port), 0) : 0;
+        const char* type_name = type == 5 ? "DualShock 2, pressure mode" : type == 4 ? "analog" : type == 6 ? "USB joystick"
+                              : type == 0xFF ? "digital" : type == 0x80 ? "not connected" : "?";
+        ImGui::Text("  game pad type %u (%s)", type, type_name);
+        if (ImGui::BeginTable("pressures", 3, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Button");
+            ImGui::TableSetupColumn("Host");
+            ImGui::TableSetupColumn("Game read");
+            ImGui::TableHeadersRow();
+            const u32 rec = 0x004121D8u + 100u * static_cast<u32>(port);  // libpad port record (pad.cpp)
+            for (int i = 0; i < 12; ++i) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(kPressureNames[i]);
+                ImGui::TableNextColumn();
+                ImGui::Text("%3u", st.pressure[static_cast<size_t>(i)]);
+                ImGui::TableNextColumn();
+                ImGui::Text("%3u", PeekOr<u8>(rec + 0x40u + static_cast<u32>(i), 0));
+            }
+            ImGui::EndTable();
+        }
+        ImGui::PopID();
+        if (port == 0) ImGui::Separator();
+    }
     ImGui::End();
 }
 

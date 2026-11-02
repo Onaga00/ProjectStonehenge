@@ -1,8 +1,8 @@
 // Per-tick input stream (docs/port/slices.md §B P1): the pad states each game tick read. It is the
 // whole external input of a run, so feeding it back reproduces the run (determinism checks, and
 // later lockstep LAN play, ADR-008). File format (little-endian): "AC4I", u32 version 1, then one
-// record per tick: u64 vblank, two pads of {u8 connected, u16 buttons, u8 rx ry lx ly,
-// u8 pressure[12]} (19 bytes each).
+// record per tick: u64 vblank, two pads of {u8 connected (bit 0; bit 1 the digital map cycle,
+// 2026-10-31), u16 buttons, u8 rx ry lx ly, u8 pressure[12]} (19 bytes each).
 #pragma once
 
 #include <cstdint>

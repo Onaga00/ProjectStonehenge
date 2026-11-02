@@ -54,6 +54,8 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
             o.fps_overlay = true;
         } else if (arg == "--no-fps-overlay") {
             o.fps_overlay = false;
+        } else if (arg == "--gpu-profile") {
+            o.gpu_profile = true;
         } else if (arg == "--verify-iso") {
             o.verify_iso = true;
         } else if (arg == "--dump-ram-after-load") {
@@ -326,6 +328,7 @@ std::string CommandLineHelp() {
            "  --no-debug-overlay    Disable the debug overlay for this session\n"
            "  --fps-overlay         Show the frame rate and frame time (top right) this session\n"
            "  --no-fps-overlay      Hide the frame rate overlay this session\n"
+           "  --gpu-profile         Write the GPU time of each part of the frame to the log at exit\n"
            "  --verify-iso          Check the disc image checksum again (ignore the cache)\n"
 #if AC04_DEV_BUILD
            "  --allow-unverified-iso  Development builds: continue with an image whose\n"

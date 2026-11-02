@@ -77,7 +77,7 @@ Recommendation: **nlohmann/json**, pinned by FetchContent with a checksum. Setti
 
 | Dependency | Version | License file checked | GPL-3.0 compatible | Added in |
 |---|---|---|---|---|
-| SDL3 | 3.4.16 | `LICENSE.txt`: zlib | yes | milestone A |
+| SDL3 | 3.4.16 | `LICENSE.txt`: zlib; bundled HIDAPI (`src/hidapi/LICENSE.txt`: choice of GPL-3.0, BSD-style or original HIDAPI license, used under GPL-3.0; checked 2026-10-31 for DualShock 3 pressure support: part of the same pinned archive, not a separate dependency) | yes | milestone A |
 | Vulkan-Headers | vulkan-sdk-1.4.363.0 | `LICENSE.md` + `LICENSES/`: Apache-2.0, MIT | yes | milestone A |
 | volk | vulkan-sdk-1.4.363.0 | `LICENSE.md`: MIT | yes | milestone A |
 | VulkanMemoryAllocator | v3.4.0 | `LICENSE.txt`: MIT | yes | milestone A |

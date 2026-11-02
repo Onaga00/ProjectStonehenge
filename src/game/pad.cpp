@@ -12,6 +12,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -375,6 +376,13 @@ void UpdateMappedPadButtons(u32 pad, u32 ext, u32 map_out) {
         if ((GRef<u32>(pad + 4) & GRef<u32>(map_out + 4 * i)) != 0) buttons |= 1u << i;
         const u8 index = GRef<u8>(map_out + 0x40 + i);
         if (index != 0xFF) GRef<u8>(ext + 0x10 + i) = GRef<u8>(pad + 0x14 + index);
+    }
+    // port: digital map cycle (port_hooks.h InputHooks): with a device that gives square no
+    // pressure, square also sets the MAP bit 9 the analog pad's map 0x0029FF40 gives it (entry 7 =
+    // 9; 0x0029FF60 has only its value, 0x8D). No entry of 0x0029FF60 sets bit 9.
+    if (type == 5) {
+        const u32 port = (pad - (g_pMainContext().addr + 0x210)) / 0x50;
+        if (port < 2 && port::Input().digital_map_cycle[port] && (GRef<u32>(pad + 4) & 0x80u) != 0) buttons |= 0x200u;
     }
     const u32 prev = GRef<u32>(ext);
     const u32 pressed = ~prev & buttons;

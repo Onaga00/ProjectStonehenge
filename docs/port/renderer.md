@@ -256,3 +256,14 @@ Measured (GD-3): the no-save intro at 1× has 4 frames with more than 16 ms of C
 | Draw list with one vertex buffer | `DrawList`, `DrawCommand::first_vertex` / `vertex_count`, `GsState::TakeDraws(DrawList&)` | A primitive only ever goes to the newest draw, so each draw's vertices are contiguous. No allocation per draw; buffers keep their capacity |
 | Pipeline reuse | `GsBackend::Record` (`pipeline` lambda) | Consecutive draws with the same key skip `GetPipeline` |
 | Blended copies replayed | `Renderer::SubmitBlendedStep`, `GsState::ProcessGifTraced` / `ReplayVertices`, `FrameInterpolator::StepSerial` | The first copy of a step is processed and traced (the kick of every draw-list vertex and of its colour, the XYOFFSET of every kick, the texel ranges of textured sprites, lines and points). A later copy of the same step is parsed for vertex writes only; everything else must be the traced bytes, and the texel ranges must not change. Its draws are the traced ones with the new vertices; no texture work (textures and the GPU's copy of local memory stay as the traced frame left them). Any other case processes the copy again |
+
+## 3. GPU time measurement (2026-10-30)
+
+`src/platform/render/gpu_profiler.*`; runs and results: `validation.md` §2ao.
+
+- **Always on**: a top-of-pipe timestamp when the frame's command buffer starts and a bottom-of-pipe one when it ends (after the output pass): the frame's GPU time, averaged at exit over the frames with GS draws (at 340 fps most presented frames only show the last step again).
+- **`--gpu-profile`** (all builds): `GpuProfiler::Mark` writes a bottom-of-pipe timestamp at the end of each section of the frame (`GpuSection`): texture work, each GS render pass (`end_pass`, tagged with its target and its draw-call count), frame as texture, field copy, DATE / shader-blend region, GPU palette, view sync, conversion, depth copy, anti-aliasing, present copy, movie upscaling, output pass. A section's time is the time from the previous timestamp to its own: what its commands added, including the wait of the barrier in front of them. Bottom-of-pipe timestamps wait for nothing and add no barrier. At most 2,048 timestamps per frame (marks over the budget are counted and their time goes to the next section).
+- Results are read with `vkGetQueryPoolResults` (no wait flag) when the frame slot's fence has been waited on, so the figures arrive two frames later and never stall the render thread; the queries are reset in the frame's own command buffer.
+- The output pass section includes the wait for the swapchain image (the submission waits on it at colour-attachment output).
+- Draw-state counters (`GsBackend::PassStats`: draw calls, pipeline binds, push-constant updates, texture binds) are CPU counters, always on.
+- Queues without timestamp support (`timestampValidBits` 0): everything is a no-op and the lines are not logged.

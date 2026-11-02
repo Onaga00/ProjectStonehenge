@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "platform/render/gpu_profiler.h"
 #include "platform/render/gs/gs_state.h"
 #include "platform/render/vk_context.h"
 
@@ -114,6 +115,12 @@ public:
         std::uint32_t copies = 0;         // frame-buffer copies: frame read as a texture, field copy, DATE /
                                           // shader-blend regions, GPU palettes, view syncs, conversions, anti-aliasing
         std::uint64_t copy_pixels = 0;    // host pixels those copies wrote
+        // State changes inside the GS render passes (gpu_profiler.h: the draws' GPU time).
+        std::uint32_t draws = 0;           // draw calls
+        std::uint32_t pipeline_binds = 0;  // vkCmdBindPipeline
+        std::uint32_t push_constants = 0;  // vkCmdPushConstants of the draw parameters
+        std::uint32_t texture_binds = 0;   // vkCmdBindDescriptorSets of the draw's texture
+        std::uint32_t depth_state_sets = 0;  // dynamic depth compare / depth write changes
         // The same by kind (CopyKind).
         std::array<std::uint32_t, 7> kind_copies{};
         std::array<std::uint64_t, 7> kind_pixels{};
@@ -131,6 +138,8 @@ public:
     // the GS alpha in the frame buffer is kept.
     enum class AntiAlias { kOff, kFxaa, kSmaa };
     void SetAntiAlias(AntiAlias mode) { aa_mode_ = mode; }
+    // GPU time per section (gpu_profiler.h): Record marks the end of each section it records.
+    void SetProfiler(GpuProfiler* p) { profiler_ = p; }
 
 private:
     struct Image {
@@ -283,6 +292,10 @@ private:
     std::uint64_t record_count_ = 0;
     TextureStats texture_stats_;
     PassStats pass_stats_;
+    GpuProfiler* profiler_ = nullptr;
+    void Mark(VkCommandBuffer cmd, GpuSection s, std::uint32_t tag = 0, std::uint32_t draws = 0) {
+        if (profiler_) profiler_->Mark(cmd, s, tag, draws);
+    }
     // GPU decode (gs_decode.comp): the GPU's copy of GS local memory, the pipeline, per-frame
     // descriptor pools (one set per decoded rectangle's texture) and palette buffers.
     Buffer gs_memory_;  // device local, 4 MiB

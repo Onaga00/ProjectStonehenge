@@ -17,4 +17,9 @@ BootOptions& Boot() {
     return options;
 }
 
+InputHooks& Input() {
+    static InputHooks hooks;
+    return hooks;
+}
+
 }  // namespace ac04::port
