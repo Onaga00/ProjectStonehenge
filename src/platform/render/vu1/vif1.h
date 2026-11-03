@@ -31,9 +31,15 @@ struct Vu1State {
     std::uint32_t next_pc = 0;  // where MSCNT continues (pair after the last E bit's delay slot)
 
     std::uint32_t* Qword(std::uint32_t addr) { return &mem[(addr & (kVuMemQwords - 1)) * 4]; }
+    // The VU has no NaN or infinity: exponent 255 is an ordinary number (±1.x · 2^128). Read as
+    // ±FLT_MAX so that it stays finite (0 × it = 0, as on the VU) instead of an IEEE NaN/Inf. Game
+    // data can leave such words in slots a program multiplies by zero: the light colours that
+    // InitLightSet 0x00136AA0 leaves uncleared (docs/port/validation.md §2aq HT-6).
     float F(std::uint32_t addr, int c) const {
+        std::uint32_t b = mem[(addr & (kVuMemQwords - 1)) * 4 + c];
+        if ((b & 0x7F800000u) == 0x7F800000u) b = (b & 0x80000000u) | 0x7F7FFFFFu;
         float f;
-        std::memcpy(&f, &mem[(addr & (kVuMemQwords - 1)) * 4 + c], 4);
+        std::memcpy(&f, &b, 4);
         return f;
     }
     std::int32_t I(std::uint32_t addr, int c) const { return static_cast<std::int32_t>(mem[(addr & (kVuMemQwords - 1)) * 4 + c]); }

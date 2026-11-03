@@ -47,9 +47,9 @@ The GRAPHICS page's DEFAULT button sets these values too.
 | `presentation.frame_cap` | `60`, `120`, `144`, `240`, `360`; used only with v-sync off (with v-sync on the display paces the frames) | `360`, or the refresh-rate cap (above) |
 | `presentation.window_mode` | `windowed`, `fullscreen` (borderless desktop-size window; `borderless`, the earlier name, is read as `fullscreen`) | `fullscreen` |
 | `presentation.window_width` / `window_height` | windowed client size (saved at exit) | `1280` / `960` |
-| `presentation.internal_scale` | `1`–`8` (internal rendering resolution; changes apply while running) | closest to the display (above); `1` in validation runs |
+| `presentation.internal_scale` | `1`–`8` (internal rendering resolution; changes apply while running) | closest to the display (above); `1` in validation runs and on an integrated GPU (User decision 2026-11-03: applied when the file is written with the defaults, first start or a rejected file; `validation.md` §2ar) |
 | `presentation.frame_interpolation` | `true`, `false`: above 60 presented frames per second the 3D is drawn between the last two game steps (§2) | `true` |
-| `presentation.antialiasing` | `off`, `fxaa`, `smaa`: anti-aliasing of the flight views before their HUD (§2); `--antialiasing` for a session | `fxaa`; `off` in validation runs |
+| `presentation.antialiasing` | `off`, `fxaa`, `smaa`: anti-aliasing of the flight views before their HUD (§2); `--antialiasing` for a session | `fxaa`; `off` in validation runs and on an integrated GPU (as `internal_scale`) |
 | `presentation.default_screen_ratio` | `monitor` (the game's SCREEN RATIO starts at 16:9 on a monitor wider than 4:3, §2), `game` (the PS2 default, 4:3) | `monitor` |
 | `paths.iso` | disc image path | empty |
 | `audio.on_focus_loss` | `keep_playing`, `mute` | `keep_playing` |

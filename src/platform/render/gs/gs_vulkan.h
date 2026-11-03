@@ -256,6 +256,7 @@ private:
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkSampler linear_sampler_ = VK_NULL_HANDLE;  // the upscaled movie picture
     VkShaderModule vs_ = VK_NULL_HANDLE, fs_ = VK_NULL_HANDLE;
+    VkShaderModule fs_single_ = VK_NULL_HANDLE;  // gs.frag without the second blend output
     // Pipeline warm-up (gs_pipeline_keys.h): threads started by Init build the keys the game is
     // known to use, so that a new driver compiles them before the first 3D frame instead of inside
     // frames (validation.md §2ai). pipelines_ and warming_ are guarded by pipelines_mutex_.

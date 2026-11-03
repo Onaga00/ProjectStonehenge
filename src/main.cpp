@@ -492,9 +492,11 @@ int Run(int argc, char** argv) {
                   validation_run ? " (validation run)" : "");
 
     SettingsStore settings;
+    bool settings_from_defaults = false;  // settings.json written with the defaults this session
     {
         std::vector<std::string> warnings;
         const auto result = settings.Load(paths.settings_file, warnings);
+        settings_from_defaults = result != SettingsStore::LoadResult::Loaded;
         if (result == SettingsStore::LoadResult::Rejected) {
             // Unreadable, invalid or incompatible: deleted and replaced with the defaults.
             ReportRejected(warnings);
@@ -546,6 +548,34 @@ int Run(int argc, char** argv) {
         m.details = {{"Reason", error}, {"Session log", PathToUtf8(log::FilePath())}};
         ShowErrorBox(std::string(kAppTitle) + " - Error", m, &window);
         return 1;
+    }
+    // Integrated GPU (User decision 2026-11-03): the defaults keep internal scale 1 and anti-aliasing
+    // off. The GPU is known only now, so a settings file written with the defaults in this session
+    // (first start, or a rejected file) gets those two values, in the file and in effect, unless
+    // the command line set them. A file that already existed keeps the player's values.
+    if (renderer.Context().gpu.integrated) {
+        SetDefaultsIntegratedGpu(true);
+        const PresentationSettings d = DefaultSettings(start_display).presentation;
+        AC04_LOG_INFO("startup", "integrated GPU: default internal scale %dx, anti-aliasing %s", d.internal_scale,
+                      ToString(d.antialiasing));
+        if (settings_from_defaults) {
+            SettingsStore saved;
+            std::vector<std::string> ignored;
+            saved.Load(paths.settings_file, ignored);
+            Settings file = saved.Get();
+            file.presentation.internal_scale = d.internal_scale;
+            file.presentation.antialiasing = d.antialiasing;
+            saved.Replace(file);
+            if (!saved.Save(&error)) AC04_LOG_ERROR("settings", "cannot save settings.json: %s", error.c_str());
+            Settings now = settings.Get();
+            if (!cl.options.internal_scale) now.presentation.internal_scale = d.internal_scale;
+            if (cl.options.antialiasing.empty()) now.presentation.antialiasing = d.antialiasing;
+            if (now.presentation.internal_scale != settings.Get().presentation.internal_scale ||
+                now.presentation.antialiasing != settings.Get().presentation.antialiasing) {
+                settings.Replace(now);  // no listeners yet: the renderer takes it directly
+                renderer.ApplySettings(now.presentation);
+            }
+        }
     }
     // GS textures are decoded on the GPU; the CPU reference decoder in development builds only.
     if (cl.options.verify_texture_decode) renderer.SetTextureDecode(render::gs::TextureDecode::kBoth);

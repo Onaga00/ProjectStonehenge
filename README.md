@@ -46,7 +46,7 @@ This project is being developed with extensive use of generative AI. The reverse
 - **V-Sync**
 - **FSR 1 upscaled cutscenes**: the FMV movies are upscaled with AMD FidelityFX FSR 1 to match internal resolution
 - **Dedicated in-game graphics settings**: a GRAPHICS in-game page under OPTIONS → SCREEN SETTINGS
-
+I remmeb
 **Controls**
 - Keyboard, mouse and gamepad support through SDL3, with bindings in `controls.ini`, a plain text file you can edit with Notepad
 - **Mouse flight**: the mouse steers roll and pitch in flight (or yaw or the camera; set in `controls.ini`)

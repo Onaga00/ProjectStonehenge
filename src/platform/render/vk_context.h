@@ -17,6 +17,7 @@ struct GpuInfo {
     std::string name;
     std::string driver;
     std::string api_version;
+    bool integrated = false;  // VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
 };
 
 class VkContext {

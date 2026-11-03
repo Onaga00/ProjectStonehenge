@@ -221,6 +221,22 @@ TEST_CASE("settings: validation runs keep 1x and no anti-aliasing") {
     CHECK(DefaultSettings(d).presentation.internal_scale == 5);
 }
 
+TEST_CASE("settings: an integrated GPU keeps 1x and no anti-aliasing") {
+    DisplayInfo d;
+    d.width = 1920;
+    d.height = 1080;
+    d.refresh_hz = 60;
+    SetDefaultsIntegratedGpu(true);
+    const Settings s = DefaultSettings(d);
+    SetDefaultsIntegratedGpu(false);
+    CHECK(s.presentation.vsync);
+    CHECK(s.presentation.window_mode == DefaultSettings(d).presentation.window_mode);
+    CHECK(s.presentation.internal_scale == 1);
+    CHECK(s.presentation.antialiasing == AntiAliasing::Off);
+    CHECK(DefaultSettings(d).presentation.internal_scale == 2);
+    CHECK(DefaultSettings(d).presentation.antialiasing == AntiAliasing::Fxaa);
+}
+
 TEST_CASE("settings: broken JSON gives defaults") {
     SettingsStore store;
     std::vector<std::string> warnings;

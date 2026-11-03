@@ -36,6 +36,7 @@ constexpr EnumName<AntiAliasing> kAntiAliasing[] = {{AntiAliasing::Off, "off"},
 
 DisplayInfo g_DefaultsDisplay;
 bool g_ValidationDefaults = false;
+bool g_DefaultsIntegratedGpu = false;
 
 template <typename T, size_t N>
 const char* NameOf(const EnumName<T> (&table)[N], T value) {
@@ -145,7 +146,7 @@ Settings DefaultSettings(const DisplayInfo& display) {
             if (c <= hz) cap = c;
         s.presentation.frame_cap = cap;
     }
-    if (!g_ValidationDefaults) {
+    if (!g_ValidationDefaults && !g_DefaultsIntegratedGpu) {
         s.presentation.antialiasing = AntiAliasing::Fxaa;
         s.presentation.internal_scale = DefaultInternalScale(display.height);
     }
@@ -161,6 +162,8 @@ int DefaultInternalScale(int height) {
 void SetDefaultsDisplay(const DisplayInfo& display) { g_DefaultsDisplay = display; }
 const DisplayInfo& DefaultsDisplay() { return g_DefaultsDisplay; }
 void SetValidationDefaults(bool on) { g_ValidationDefaults = on; }
+void SetDefaultsIntegratedGpu(bool on) { g_DefaultsIntegratedGpu = on; }
+bool DefaultsIntegratedGpu() { return g_DefaultsIntegratedGpu; }
 
 bool IsValidFrameCap(int fps) {
     for (int c : kFrameCaps)

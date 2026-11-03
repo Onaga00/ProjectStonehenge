@@ -75,6 +75,9 @@ ac04_add_shaders(ac04_platform
     "${CMAKE_SOURCE_DIR}/shaders/smaa_weights.frag"
     "${CMAKE_SOURCE_DIR}/shaders/smaa_blend.frag"
     "${CMAKE_SOURCE_DIR}/shaders/fxaa.frag")
+# gs.frag without its second blend output, for the GS pipelines whose blend does not read it
+# (docs/port/validation.md §2ar).
+ac04_add_shader_variant(ac04_platform "${CMAKE_SOURCE_DIR}/shaders/gs.frag" gs_single_frag GS_SINGLE_SOURCE)
 
 add_library(ac04_game OBJECT
     game/ai_aircraft.cpp

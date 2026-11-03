@@ -16,6 +16,7 @@
 #include "gs_decode_comp_spv.h"
 #include "gs_depth_copy_frag_spv.h"
 #include "gs_frag_spv.h"
+#include "gs_single_frag_spv.h"
 #include "gs_vert_spv.h"
 #include "platform/log.h"
 #include "platform/render/gs/gs_pipeline_keys.h"
@@ -154,6 +155,17 @@ BlendState MapBlend(std::uint64_t alpha) {
             break;
     }
     return s;
+}
+
+// Whether pipeline `key` (CreatePipeline: bit 0 blend on, bits 1-7 / 8-14 the colour factors; alpha
+// factors use the blend constant) blends with the shader's second output.
+bool UsesSecondBlendSource(std::uint64_t key) {
+    if ((key & 1) == 0) return false;
+    const auto src1 = [](std::uint64_t f) {
+        return f == VK_BLEND_FACTOR_SRC1_COLOR || f == VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR ||
+               f == VK_BLEND_FACTOR_SRC1_ALPHA || f == VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+    };
+    return src1((key >> 1) & 0x7F) || src1((key >> 8) & 0x7F);
 }
 
 // Target layout class of a frame format: CT24 shares the CT32 layout; the 16-bit formats differ.
@@ -507,6 +519,9 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     smi.codeSize = sizeof(gs_frag_spv);
     smi.pCode = gs_frag_spv;
     vkCreateShaderModule(ctx.device, &smi, nullptr, &fs_);
+    smi.codeSize = sizeof(gs_single_frag_spv);
+    smi.pCode = gs_single_frag_spv;
+    vkCreateShaderModule(ctx.device, &smi, nullptr, &fs_single_);
 
     // Initial layouts: images read by the shader start out cleared and readable.
     VkCommandPool pool = VK_NULL_HANDLE;
@@ -1331,7 +1346,11 @@ void GsBackend::Shutdown() {
             }
             return out;
         };
-        AC04_LOG_INFO("renderer", "GS pipelines: %zu in use; keys: %s", keys.size(), list(keys).c_str());
+        std::size_t single = 0;
+        for (std::uint64_t k : keys)
+            if (!UsesSecondBlendSource(k)) ++single;
+        AC04_LOG_INFO("renderer", "GS pipelines: %zu in use (%zu without dual-source blending); keys: %s", keys.size(),
+                      single, list(keys).c_str());
         if (!frame_pipeline_keys_.empty())
             AC04_LOG_INFO("renderer", "GS pipelines: %zu built during frames (%.1f ms in total, slowest %.1f ms): %s",
                           frame_pipeline_keys_.size(), frame_pipeline_ms_, frame_pipeline_ms_max_,
@@ -1403,6 +1422,7 @@ void GsBackend::Shutdown() {
     }
     if (vs_) vkDestroyShaderModule(ctx_->device, vs_, nullptr);
     if (fs_) vkDestroyShaderModule(ctx_->device, fs_, nullptr);
+    if (fs_single_) vkDestroyShaderModule(ctx_->device, fs_single_, nullptr);
     if (sampler_) vkDestroySampler(ctx_->device, sampler_, nullptr);
     if (linear_sampler_) vkDestroySampler(ctx_->device, linear_sampler_, nullptr);
     linear_sampler_ = VK_NULL_HANDLE;
@@ -1649,9 +1669,12 @@ VkPipeline GsBackend::GetPipeline(std::uint64_t key) {
 }
 
 VkPipeline GsBackend::CreatePipeline(std::uint64_t key) const {
+    // A pipeline whose blend reads no SRC1 factor gets gs.frag without its second output
+    // (gs_single_frag): same picture, and Intel GPUs before Gen12 then run it at full width.
+    const VkShaderModule fs = UsesSecondBlendSource(key) ? fs_ : fs_single_;
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs_, "main", nullptr};
-    stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs_, "main", nullptr};
+    stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
     VkVertexInputBindingDescription vb{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription va[4] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                {1, 0, VK_FORMAT_R8G8B8A8_UINT, 12},

@@ -92,7 +92,8 @@ InputSettings DefaultInputSettings();
 // The defaults on `display` (User requests 2026-10-20 and 2026-10-22): fullscreen, v-sync on, FXAA,
 // the internal scale whose picture (448 lines x N) is closest to the display's height; with a
 // refresh rate other than 60 or 120 Hz the frame cap (used with v-sync off) is the highest one at
-// or below it. Validation runs (SetValidationDefaults) keep 1x and no anti-aliasing.
+// or below it. Validation runs (SetValidationDefaults) keep 1x and no anti-aliasing; so does an
+// integrated GPU (SetDefaultsIntegratedGpu, User decision 2026-11-03).
 Settings DefaultSettings(const DisplayInfo& display);
 // Internal scale for a display `height` pixels high: 448 x N closest to it, 1-8 (1 when unknown).
 int DefaultInternalScale(int height);
@@ -103,6 +104,11 @@ const DisplayInfo& DefaultsDisplay();
 // the defaults keep internal scale 1 and anti-aliasing off, so screenshots compare with the
 // baselines. Set once at startup.
 void SetValidationDefaults(bool on);
+// The GPU the renderer chose is an integrated one (VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU): the
+// defaults keep internal scale 1 and anti-aliasing off. Set once at startup, after the renderer
+// started (main.cpp applies it to a settings file written with the defaults in the same session).
+void SetDefaultsIntegratedGpu(bool on);
+bool DefaultsIntegratedGpu();
 
 class SettingsStore {
 public:

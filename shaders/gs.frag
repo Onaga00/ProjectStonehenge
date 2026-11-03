@@ -11,8 +11,14 @@ layout(location = 0) in vec4 v_color;
 layout(location = 1) noperspective in vec3 v_tex;
 layout(location = 2) in float v_fog;
 
+// GS_SINGLE_SOURCE (gs_single_frag, the pipelines whose blend reads no SRC1 factor): output 0
+// only. Intel GPUs before Gen12 run a dual-source pixel shader at half width (SIMD8).
+#ifdef GS_SINGLE_SOURCE
+layout(location = 0) out vec4 o_color;
+#else
 layout(location = 0, index = 0) out vec4 o_color;
 layout(location = 0, index = 1) out vec4 o_factor;
+#endif
 
 layout(set = 1, binding = 0) uniform sampler2D tex;  // the draw's decoded texture (gs_state.h DecodedTexture)
 layout(binding = 1) uniform sampler2D feedback;
@@ -209,5 +215,7 @@ void main() {
     if ((pc.flags & (1 << 24)) != 0) c = vec4(floor(c.rgb / 8.0) * 8.0, c.a >= 128.0 ? 128.0 : 0.0);
     // Flag 18: C = Ad blending (gs_vulkan.cpp MapBlend) needs Cs / 128 against DST_ALPHA = Ad / 255.
     o_color = vec4(c.rgb / (((pc.flags & (1 << 18)) != 0) ? 128.0 : 255.0), c.a / 255.0);
+#ifndef GS_SINGLE_SOURCE
     o_factor = vec4(factor);
+#endif
 }

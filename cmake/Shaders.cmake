@@ -38,3 +38,22 @@ function(ac04_add_shaders target)
     add_dependencies(${target} ${target}_shaders)
     target_include_directories(${target} PRIVATE "${out_dir}")
 endfunction()
+
+# A second build of one shader with a preprocessor define: `<out_name>_spv.h` holding
+# `const uint32_t <out_name>_spv[]` (e.g. gs.frag with -DGS_SINGLE_SOURCE as gs_single_frag).
+function(ac04_add_shader_variant target src out_name define)
+    set(out_dir "${CMAKE_BINARY_DIR}/generated/shaders")
+    file(MAKE_DIRECTORY "${out_dir}")
+    get_filename_component(abs "${src}" ABSOLUTE)
+    set(header "${out_dir}/${out_name}_spv.h")
+    add_custom_command(
+        OUTPUT "${header}"
+        COMMAND $<TARGET_FILE:glslang-standalone> -V --target-env vulkan1.2 "-D${define}" --vn ${out_name}_spv
+                -o "${header}" "${abs}"
+        DEPENDS "${abs}" glslang-standalone
+        COMMENT "Compiling shader ${out_name} (${define})"
+        VERBATIM)
+    add_custom_target(${target}_${out_name} DEPENDS "${header}")
+    add_dependencies(${target} ${target}_${out_name})
+    target_include_directories(${target} PRIVATE "${out_dir}")
+endfunction()

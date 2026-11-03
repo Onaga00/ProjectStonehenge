@@ -189,6 +189,7 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
     vkGetPhysicalDeviceProperties(physical_device, &props);
     gpu.name = props.deviceName;
     gpu.api_version = VersionString(props.apiVersion);
+    gpu.integrated = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
     gpu.driver = std::to_string(props.driverVersion);
     {
         VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
