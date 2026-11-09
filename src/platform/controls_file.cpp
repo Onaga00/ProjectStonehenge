@@ -41,6 +41,7 @@ constexpr const char* kDefaultText = R"(; ProjectStonehenge controls: keyboard, 
 ;             Left Stick Up / Down / Left / Right   Right Stick Up / Down / Left / Right
 ;   Adapters  Joy Axis 7 (whole axis)   Joy Axis 7+ / Joy Axis 7- (half)   Joy Button 4
 ;   [Mouse] steers   Roll   Pitch   Yaw   Camera   None
+;   Mouse Back and Mouse Forward are the side buttons; they have no action by default.
 ;
 ; Layout version of this file, do not change it: a file of another version is replaced with the defaults.
 Version = 1
@@ -87,6 +88,9 @@ Up/down           = Pitch
 Sensitivity       = 1.0            ; 0.1 to 10
 Invert up/down    = no             ; no: mouse forward = nose down, like pushing a stick
 Return to centre  = yes            ; yes: stop the mouse and the stick centres; no: it stays where you left it
+; While this is held the mouse steers the other stick: Roll/Pitch/Yaw become Camera, Camera becomes
+; Roll (left/right) or Pitch (up/down). Keys, mouse or gamepad buttons; empty: never.
+Hold to swap stick = Left Alt, Right Alt
 
 [Gamepad]
 ; PS2 button = button of your gamepad, by position: South is the lower face button (A on Xbox,
@@ -242,6 +246,25 @@ Parsed Parse(const std::string& text, const Parsed& base, std::vector<std::strin
     const auto warn = [&](const std::string& what) {
         warnings.push_back("controls.ini line " + std::to_string(line_no) + ": " + what);
     };
+    // An input list: all of it, or false (the entry keeps its default) on any unknown name.
+    const auto parse_list = [&](const std::string& key, const std::string& value, std::vector<InputSource>& list) {
+        std::size_t start = 0;
+        while (start <= value.size() && !value.empty()) {
+            const std::size_t comma = value.find(',', start);
+            const std::string item = Trim(value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+            if (!item.empty()) {
+                InputSource s;
+                if (!ParseFriendlyInput(item, s)) {
+                    warn("'" + item + "' is not a known key, mouse or gamepad input (" + key + " keeps its default)");
+                    return false;
+                }
+                if (std::find(list.begin(), list.end(), s) == list.end()) list.push_back(s);
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        return true;
+    };
     while (std::getline(in, raw)) {
         ++line_no;
         if (line_no == 1 && raw.compare(0, 3, "\xEF\xBB\xBF") == 0) raw.erase(0, 3);  // Notepad's UTF-8 mark
@@ -295,31 +318,16 @@ Parsed Parse(const std::string& text, const Parsed& base, std::vector<std::strin
                 if (!ParseBool(value, out.mouse.invert_vertical)) warn("'" + value + "' is not yes or no");
             } else if (nkey == "returntocentre" || nkey == "returntocenter") {
                 if (!ParseBool(value, out.mouse.return_to_centre)) warn("'" + value + "' is not yes or no");
+            } else if (nkey == "holdtoswapstick" || nkey == "swapstick") {
+                std::vector<InputSource> list;
+                if (parse_list(key, value, list)) out.mouse.swap_hold = list;
             } else {
                 warn("unknown mouse entry '" + key + "'");
             }
             continue;
         }
-        // An input list: all of it or (on any unknown name) the default.
         std::vector<InputSource> list;
-        bool ok = true;
-        std::size_t start = 0;
-        while (ok && start <= value.size() && !value.empty()) {
-            const std::size_t comma = value.find(',', start);
-            const std::string item = Trim(value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
-            if (!item.empty()) {
-                InputSource s;
-                if (ParseFriendlyInput(item, s)) {
-                    if (std::find(list.begin(), list.end(), s) == list.end()) list.push_back(s);
-                } else {
-                    warn("'" + item + "' is not a known key, mouse or gamepad input (" + key + " keeps its default)");
-                    ok = false;
-                }
-            }
-            if (comma == std::string::npos) break;
-            start = comma + 1;
-        }
-        if (!ok) continue;
+        if (!parse_list(key, value, list)) continue;
         bool found = false;
         if (section == Section::Keyboard) {
             for (int a = 0; a < kActionCount; ++a) {

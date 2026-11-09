@@ -16,6 +16,13 @@ std::uint32_t UnpackBits(std::uint32_t cmd) {
     return (32u >> vl) * (vn + 1);
 }
 
+// Word i of a command's data (the stream's bytes, read in place or from the collected copy).
+inline std::uint32_t Load32(const std::uint8_t* d, std::size_t i) {
+    std::uint32_t v;
+    std::memcpy(&v, d + i * 4, 4);
+    return v;
+}
+
 }  // namespace
 
 void Vif1::SwapTops() {
@@ -35,7 +42,21 @@ void Vif1::Words(const std::uint8_t* p, std::uint32_t n, std::uint32_t guest_add
             continue;
         }
         if (need_ > 0) {
-            if (data_.empty()) data_addr_ = guest_addr;
+            if (data_.empty()) {
+                data_addr_ = guest_addr;
+                if (n >= need_) {
+                    // The whole data of the command is in this block: the command reads it in place
+                    // (the same words as from the collected copy below).
+                    const std::uint8_t* const words = p;
+                    const std::uint32_t take = need_;
+                    need_ = 0;
+                    p += take * 4;
+                    n -= take;
+                    if (guest_addr != 0) guest_addr += take * 4;
+                    Command(code_, words);
+                    continue;
+                }
+            }
             const std::uint32_t take = need_ < n ? need_ : n;
             const std::size_t old = data_.size();
             data_.resize(old + take);
@@ -44,7 +65,7 @@ void Vif1::Words(const std::uint8_t* p, std::uint32_t n, std::uint32_t guest_add
             p += take * 4;
             n -= take;
             if (guest_addr != 0) guest_addr += take * 4;
-            if (need_ == 0) Command(code_);
+            if (need_ == 0) Command(code_, reinterpret_cast<const std::uint8_t*>(data_.data()));
             continue;
         }
         std::uint32_t w;
@@ -68,12 +89,12 @@ void Vif1::Words(const std::uint8_t* p, std::uint32_t n, std::uint32_t guest_add
         } else if (cmd == 0x30 || cmd == 0x31) {
             need_ = 4;
         } else {
-            Command(w);
+            Command(w, nullptr);
         }
     }
 }
 
-void Vif1::Command(std::uint32_t code) {
+void Vif1::Command(std::uint32_t code, const std::uint8_t* data) {
     const std::uint32_t cmd = (code >> 24) & 0x7F;
     const std::uint32_t num = (code >> 16) & 0xFF, imm = code & 0xFFFF;
     switch (cmd) {
@@ -89,9 +110,9 @@ void Vif1::Command(std::uint32_t code) {
         case 0x05: mode_ = imm & 3; break;
         case 0x14: case 0x15: RunProgram(imm, false); break;  // MSCAL, MSCALF
         case 0x17: RunProgram(0, true); break;                 // MSCNT
-        case 0x20: mask_ = data_[0]; break;
-        case 0x30: for (int i = 0; i < 4; ++i) row_[i] = data_[i]; break;
-        case 0x31: for (int i = 0; i < 4; ++i) col_[i] = data_[i]; break;
+        case 0x20: mask_ = Load32(data, 0); break;
+        case 0x30: for (int i = 0; i < 4; ++i) row_[i] = Load32(data, static_cast<std::size_t>(i)); break;
+        case 0x31: for (int i = 0; i < 4; ++i) col_[i] = Load32(data, static_cast<std::size_t>(i)); break;
         case 0x4A: {  // MPG: remember where each micro pair came from (program identity)
             const std::uint32_t pairs = num == 0 ? 256 : num;
             for (std::uint32_t i = 0; i < pairs; ++i)
@@ -100,7 +121,7 @@ void Vif1::Command(std::uint32_t code) {
         }
         default:
             if (cmd >= 0x60) {
-                Unpack(data_.data());
+                Unpack(data);
             } else {
                 log::WriteOnce("vif1:unknown", log::Level::Warning, "renderer", "VIF1 code 0x%02x not handled", cmd);
             }
@@ -109,7 +130,7 @@ void Vif1::Command(std::uint32_t code) {
     data_.clear();
 }
 
-void Vif1::Unpack(const std::uint32_t* data) {
+void Vif1::Unpack(const std::uint8_t* data) {
     const std::uint32_t cmd = (code_ >> 24) & 0x7F;
     const std::uint32_t num = ((code_ >> 16) & 0xFF) == 0 ? 256 : ((code_ >> 16) & 0xFF);
     const std::uint32_t imm = code_ & 0xFFFF;
@@ -130,7 +151,7 @@ void Vif1::Unpack(const std::uint32_t* data) {
         // Component c of element i, sign/zero extended to 32 bits.
         const std::uint64_t bit = static_cast<std::uint64_t>(i) * bits;
         if (vl == 3) {  // V4-5: one 16-bit RGBA5551 pixel per element
-            const std::uint32_t w = data[bit / 32] >> (bit % 32) & 0xFFFF;
+            const std::uint32_t w = Load32(data, bit / 32) >> (bit % 32) & 0xFFFF;
             switch (c) {
                 case 0: return (w & 0x1F) << 3;
                 case 1: return ((w >> 5) & 0x1F) << 3;
@@ -146,9 +167,9 @@ void Vif1::Unpack(const std::uint32_t* data) {
         const std::uint64_t b = bit + static_cast<std::uint64_t>(comp) * width;
         std::uint32_t v;
         if (width == 32) {
-            v = data[b / 32];
+            v = Load32(data, b / 32);
         } else {
-            v = (data[b / 32] >> (b % 32)) & ((1u << width) - 1);
+            v = (Load32(data, b / 32) >> (b % 32)) & ((1u << width) - 1);
             if (!usn && (v >> (width - 1)) != 0) v |= ~((1u << width) - 1);
         }
         return v;
@@ -161,12 +182,26 @@ void Vif1::Unpack(const std::uint32_t* data) {
         std::uint32_t comp_bits[4];
         for (std::uint32_t c = 0; c < 4; ++c)
             comp_bits[c] = (vn == 0 ? 0 : (vn == 1 ? (c & 1) : c)) * width;  // S: x to all, V2: z,w = x,y
-        for (std::uint32_t i = 0; i < num; ++i) {
-            std::uint32_t* q = vu_.Qword(addr + (i / wl) * cl + i % wl);
+        // Element i goes to qword addr + (i / wl) * cl + i % wl: the cycle counters step instead.
+        std::uint32_t cycle_base = addr, in_cycle = 0;
+        auto next = [&] {
+            if (++in_cycle == wl) {
+                in_cycle = 0;
+                cycle_base += cl;
+            }
+        };
+        if (vn == 3 && width == 32) {
+            // V4-32: each element is the qword's four words as they are.
+            for (std::uint32_t i = 0; i < num; ++i, next())
+                std::memcpy(vu_.Qword(cycle_base + in_cycle), data + static_cast<std::size_t>(i) * 16, 16);
+            return;
+        }
+        for (std::uint32_t i = 0; i < num; ++i, next()) {
+            std::uint32_t* q = vu_.Qword(cycle_base + in_cycle);
             const std::uint64_t base = static_cast<std::uint64_t>(i) * bits;
             for (std::uint32_t c = 0; c < outc; ++c) {
                 const std::uint64_t b = base + comp_bits[c];
-                std::uint32_t v = data[b / 32];
+                std::uint32_t v = Load32(data, b / 32);
                 if (width != 32) {
                     v = (v >> (b % 32)) & field;
                     if (!usn && (v >> (width - 1)) != 0) v |= ~field;

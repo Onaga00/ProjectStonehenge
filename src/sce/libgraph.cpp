@@ -2,6 +2,7 @@
 // GS state lives where the SDK keeps it (sceGsGetGParam block 0x003FAAA0 in .data), so translated
 // code and RAM comparisons see the same values as on the PS2. DMA chains are walked and counted
 // (milestone C); nothing is drawn yet.
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -298,6 +299,16 @@ s32 sceDmaSend(u32 chan, u32 tag) {
     u64 qw = 0;
     std::vector<u8>& gif = dma.gs_step;
     if (ch == 1) {
+        // Host time of the send (VIF1 and the VU1 HLE), for the performance figures.
+        const auto start = std::chrono::steady_clock::now();
+        struct AddTime {
+            u64& total;
+            std::chrono::steady_clock::time_point start;
+            ~AddTime() {
+                total += static_cast<u64>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+            }
+        } add_time{dma.vif1_ns, start};
         // VIF1: with CHCR.TTE the upper 64 bits of each tag go to the VIF as two VIF codes.
         const bool tte = (ac04::sce::EeDmaReadChcr(chan) & 0x40) != 0;
         ac04::render::vu1::Vif1& vif = Vif1Unit(gif);

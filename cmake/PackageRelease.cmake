@@ -1,5 +1,6 @@
 # Release archive (target package_release): out/release/ProjectStonehenge-<version>-win64.zip with
-# the release executable and the project's license and notice files, nothing else. Run as a script:
+# the release executable, the project's license and notice files, the README and keybinds.md
+# (docs/release/), nothing else. Run as a script:
 #   cmake -DCONFIG=<config> -DEXE=<exe> -DVERSION=<version> -DSOURCE_DIR=<repo> -P PackageRelease.cmake
 # Only the Release configuration is packaged (development builds carry the debug layer and the
 # development parameters). The staged files are checked for the signatures of game file formats
@@ -23,7 +24,8 @@ file(REMOVE "${archive}")
 file(MAKE_DIRECTORY "${stage}")
 
 # The files of a release, and only these.
-set(files "${EXE}" "${SOURCE_DIR}/LICENSE" "${SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "${SOURCE_DIR}/README.md")
+set(files "${EXE}" "${SOURCE_DIR}/LICENSE" "${SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "${SOURCE_DIR}/README.md"
+          "${SOURCE_DIR}/docs/release/keybinds.md")  # the players' controls guide (User request 2026-11-10)
 foreach(f IN LISTS files)
     if(NOT EXISTS "${f}")
         message(FATAL_ERROR "PackageRelease.cmake: missing ${f}")

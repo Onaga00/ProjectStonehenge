@@ -216,8 +216,9 @@ private:
     void CheckVerifyReadback(int frame);
     // Builds the texture of draw `d` (TEX0 format, address, width) from target `src`, which holds
     // that memory in another format or width, into feedback_ (gs_conv.comp).
-    // `box`: the texels [u0, u1) x [v0, v1) the draw can read (only those are converted).
-    void Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d, const std::array<int, 4>& box);
+    // `spans`: the texels the draw can read, per axis one or two ranges [a, b) (u: 0-3, v: 4-7; an
+    // empty second range has b <= a); only those rectangles are converted.
+    void Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d, const std::array<int, 8>& spans);
     // One conversion (gs_conv.comp) of `src` into feedback_: texels [u0, u1) x [v0, v1) of the
     // buffer (psm, tbp, tbw), with TEXA (TA0 bits 0-7, AEM 15, TA1 16-23) and an optional CLUT.
     struct ConvRequest {

@@ -975,6 +975,15 @@ int Run(int argc, char** argv) {
     // (render thread; read after it has stopped).
     u64 normal_frames = 0, blended_frames = 0;
     double normal_seconds = 0.0, build_ms = 0.0;
+    // Host time of the game ticks at normal speed (game thread: game code, with the VIF1 sends and
+    // the VU1 HLE counted apart) and of the main thread's waits for the render thread (log at exit
+    // and Performance window; two clock reads per tick and per wait).
+    u64 timed_ticks = 0;
+    double tick_ms_total = 0.0, tick_vif1_ms_total = 0.0, tick_ms_worst = 0.0, render_wait_ms_total = 0.0;
+    double frame_render_wait_ms = 0.0, last_render_wait_ms = 0.0;
+    const auto ms_since = [](std::chrono::steady_clock::time_point t) {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
+    };
     u64 frame_number = 0;
     bool game_end_logged = false;
     bool running = true;
@@ -1076,7 +1085,12 @@ int Run(int argc, char** argv) {
     while (running) {
         // The debug overlay's ImGui frame (events, build, draw) is not shared between threads:
         // while it is shown, frames run one after the other.
-        if (overlay.Visible() || overlay.FpsVisible()) render_thread.WaitIdle();
+        frame_render_wait_ms = 0.0;
+        if (overlay.Visible() || overlay.FpsVisible()) {
+            const auto wait_start = std::chrono::steady_clock::now();
+            render_thread.WaitIdle();
+            frame_render_wait_ms += ms_since(wait_start);
+        }
         render::FrameJob job;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -1158,6 +1172,7 @@ int Run(int argc, char** argv) {
         const u32 ticks = fast ? 0xFFFFFFFFu : clock.Advance(elapsed);
         // One tick at a time: the pads are sampled and latched before each tick (slices.md §B P1).
         u32 ticks_run = 0;
+        double frame_tick_ms = 0.0, frame_vif1_ms = 0.0;
         for (u32 t = 0; t < ticks; ++t) {
             if (fast) {
                 constexpr u64 kFastSettle = 60;
@@ -1195,7 +1210,20 @@ int Run(int argc, char** argv) {
             }
             g_feed->Latch(game.VBlankCount() + 1);
             port::Input().in_flight = {};  // set again by the game while it reads the flight controls
-            if (!game.RunTicks(1)) {
+            const auto tick_start = std::chrono::steady_clock::now();
+            const u64 vif1_ns_before = sce::Dma().vif1_ns;
+            const bool tick_ok = game.RunTicks(1);
+            const double tick_ms = ms_since(tick_start);
+            const double vif1_ms = static_cast<double>(sce::Dma().vif1_ns - vif1_ns_before) / 1e6;
+            frame_tick_ms += tick_ms;
+            frame_vif1_ms += vif1_ms;
+            if (!fast) {
+                ++timed_ticks;
+                tick_ms_total += tick_ms;
+                tick_vif1_ms_total += vif1_ms;
+                tick_ms_worst = std::max(tick_ms_worst, tick_ms);
+            }
+            if (!tick_ok) {
                 if (!game_end_logged) AC04_LOG_WARN("game", "the game thread has ended");
                 game_end_logged = true;
                 break;
@@ -1269,6 +1297,9 @@ int Run(int argc, char** argv) {
             od.dropped_ticks = clock.DroppedTicks();
             od.alpha = clock.Alpha();
             od.game_running = game.Running();
+            od.ticks_ms = frame_tick_ms;
+            od.ticks_vif1_ms = frame_vif1_ms;
+            od.render_wait_ms = last_render_wait_ms;
             od.gif_qwords = dma.frame_qwords_gif;
             od.vif1_qwords = dma.frame_qwords_vif1;
             od.gif_sends = dma.sends[2];
@@ -1280,7 +1311,15 @@ int Run(int argc, char** argv) {
                 od.pads[static_cast<size_t>(port)] = input.Port(port);
                 od.pad_devices[static_cast<size_t>(port)] = input.DeviceInfo(port);
             }
-            if (overlay.Visible() || overlay.FpsVisible()) render_thread.WaitIdle();  // ImGui: see the loop start
+            if (overlay.Visible() || overlay.FpsVisible()) {  // ImGui: see the loop start
+                const auto wait_start = std::chrono::steady_clock::now();
+                render_thread.WaitIdle();
+                frame_render_wait_ms += ms_since(wait_start);
+                // The render thread is idle: its native image size can be read (Graphics panel).
+                od.native_width = renderer.NativeWidth();
+                od.native_height = renderer.NativeHeight();
+                od.native_scale = renderer.NativeScale();
+            }
             overlay.BuildFrame(od);
             apply_overlay_requests();
         }
@@ -1306,7 +1345,10 @@ int Run(int argc, char** argv) {
         {
             // The previous frame is presented when Submit returns; its buffers go back to the game
             // side's pools while the game is parked.
+            const auto wait_start = std::chrono::steady_clock::now();
             render::FrameJob done = render_thread.Submit(std::move(job));
+            frame_render_wait_ms += ms_since(wait_start);
+            last_render_wait_ms = frame_render_wait_ms;
             sce::DmaStats& dma = sce::Dma();
             for (std::vector<u8>& s : done.returned_steps) {
                 if (dma.gs_step_pool.size() >= 4) break;
@@ -1331,6 +1373,7 @@ int Run(int argc, char** argv) {
         if (!fast) {
             ++normal_frames;
             normal_seconds += measured;
+            render_wait_ms_total += frame_render_wait_ms;
             pacer.WaitNextFrame();
         }
         // --stress-host: random main-thread delays, so catch-up batches vary (determinism check).
@@ -1396,6 +1439,11 @@ int Run(int argc, char** argv) {
                       static_cast<unsigned long long>(normal_frames), normal_seconds,
                       static_cast<double>(normal_frames) / normal_seconds, static_cast<unsigned long long>(blended_frames),
                       blended_frames > 0 ? build_ms / static_cast<double>(blended_frames) : 0.0);
+    if (timed_ticks > 0 && normal_frames > 0)
+        AC04_LOG_INFO("game", "game thread per tick at normal speed: %.2f ms on average over %llu ticks (VIF1 and VU1 HLE %.2f ms of it), slowest %.2f ms; main thread waiting for the render thread (presentation and v-sync included) %.2f ms per frame",
+                      tick_ms_total / static_cast<double>(timed_ticks), static_cast<unsigned long long>(timed_ticks),
+                      tick_vif1_ms_total / static_cast<double>(timed_ticks), tick_ms_worst,
+                      render_wait_ms_total / static_cast<double>(normal_frames));
     renderer.Shutdown();
     audio.Close();
     window.Destroy();

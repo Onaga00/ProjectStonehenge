@@ -270,6 +270,8 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
         if (uploads_.size() > 4096) uploads_.clear();
         last = &uploads_[key];
         if (last->data.size() == bytes && std::memcmp(last->data.data(), data, bytes) == 0) {
+            const std::uint32_t end =
+                pos >= total ? pos : static_cast<std::uint32_t>(std::min<std::uint64_t>(total, pos + pixels));
             bool same = true;
             for (const auto& [blk, gen] : last->blocks) {
                 if (block_gen_[blk] != gen) {
@@ -277,27 +279,57 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
                     break;
                 }
             }
-            if (same) return pos >= total ? pos : static_cast<std::uint32_t>(std::min<std::uint64_t>(total, pos + pixels));
+            if (same) return end;
+            // The same bytes, written by the whole-block path before, but other writes changed some
+            // of those blocks since (the hangar uploads the room, the light map and the skin over the
+            // same memory every step): the block path would assemble the very same 256 bytes per
+            // block again, a function of these bytes and of the key only. Store the kept copies.
+            if (!last->block_bytes.empty() && last->block_bytes.size() == last->blocks.size() * 256) {
+                std::uint8_t* const m = mem_.data();
+                for (std::size_t k = 0; k < last->blocks.size(); ++k) {
+                    auto& [blk, gen] = last->blocks[k];
+                    if (block_gen_[blk] != gen) {
+                        std::uint8_t* const dst = m + static_cast<std::size_t>(blk) * 256;
+                        const std::uint8_t* const src = last->block_bytes.data() + k * 256;
+                        if (std::memcmp(dst, src, 256) != 0) {
+                            std::memcpy(dst, src, 256);
+                            Touch(blk << 8);
+                        }
+                    }
+                }
+                for (auto& [blk, gen] : last->blocks) gen = block_gen_[blk];
+                return end;
+            }
         }
         last->blocks.clear();
+        last->block_bytes.clear();
     }
     // Records what `last` needs after a write: the generations of the blocks written, the data.
     const auto remember = [&] {
         for (auto& [blk, gen] : last->blocks) gen = block_gen_[blk];
         last->data.assign(data, data + bytes);
     };
-    // Whole blocks: a transfer whose data arrives in one piece and whose rectangle lies on block
-    // boundaries (texture tiles: the no-save intro streams its terrain this way every frame) is
-    // written block by block: the 256 bytes of a block assembled in the GS layout, then compared
-    // and stored at once. Same bytes and the same block changes as the run loop below.
+    // Whole blocks: a packet of a transfer whose rectangle lies on block boundaries, when the packet
+    // holds whole rows of blocks (the whole transfer in one piece, or a piece ending on a block row:
+    // the hangar room's 1024 x 512 T8 arrives as two 1024 x 256 halves; texture tiles: the no-save
+    // intro streams its terrain this way every frame), is written block by block: the 256 bytes of
+    // a block assembled in the GS layout, then compared and stored at once. Same bytes and the same
+    // block changes as the run loop below.
     const std::uint32_t bw_px = BlockWidth(dpsm), bh_px = BlockHeight(dpsm);
-    if (run_len != 0 && pos == 0 && pixels >= total && dsax % bw_px == 0 && dsay % bh_px == 0 && rrw % bw_px == 0 &&
-        rrh % bh_px == 0 && dsax + rrw <= 2048 && dsay + rrh <= 2048) {
+    const std::uint64_t block_row_px = static_cast<std::uint64_t>(rrw) * bh_px;
+    const std::uint64_t packet_px = pos < total ? std::min<std::uint64_t>(pixels, total - pos) : 0;
+    if (run_len != 0 && packet_px > 0 && pos % block_row_px == 0 && packet_px % block_row_px == 0 &&
+        dsax % bw_px == 0 && dsay % bh_px == 0 && rrw % bw_px == 0 && rrh % bh_px == 0 && dsax + rrw <= 2048 &&
+        dsay + rrh <= 2048) {
         std::uint8_t* const m = mem_.data();
         std::uint8_t block[256];
-        for (std::uint32_t by = 0; by < rrh; by += bh_px) {
+        const std::uint32_t row0 = pos / rrw;  // first pixel row of the packet (a block row boundary)
+        const std::uint32_t rows = static_cast<std::uint32_t>(packet_px / rrw);
+        last->block_bytes.reserve(static_cast<std::size_t>(rows / bh_px) * (rrw / bw_px) * 256);
+        for (std::uint32_t by = row0; by < row0 + rows; by += bh_px) {
             for (std::uint32_t bx = 0; bx < rrw; bx += bw_px) {
-                const std::size_t first = static_cast<std::size_t>(by) * rrw + bx;  // pixel index of the block's corner
+                // Pixel index of the block's corner within this packet's data.
+                const std::size_t first = static_cast<std::size_t>(by - row0) * rrw + bx;
                 switch (bpp) {
                     case 32:
                         for (std::uint32_t y = 0; y < 8; ++y)
@@ -331,10 +363,11 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
                     Touch(base);
                 }
                 last->blocks.emplace_back(base >> 8, 0u);
+                last->block_bytes.insert(last->block_bytes.end(), block, block + 256);
             }
         }
         remember();
-        return total;
+        return static_cast<std::uint32_t>(pos + packet_px);
     }
     if (run_len != 0) {
         std::uint64_t i = 0;

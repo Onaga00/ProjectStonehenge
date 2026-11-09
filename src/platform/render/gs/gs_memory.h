@@ -132,6 +132,10 @@ private:
     struct LastUpload {
         std::vector<std::uint8_t> data;
         std::vector<std::pair<std::uint32_t, std::uint32_t>> blocks;  // block number, generation
+        // Written by the whole-block path: the 256 bytes it stored in each block (same order as
+        // `blocks`), so the same bytes sent again after other uploads overwrote those blocks are
+        // stored without assembling the blocks again. Empty for the other paths.
+        std::vector<std::uint8_t> block_bytes;
     };
     std::unordered_map<UploadKey, LastUpload, UploadKeyHash> uploads_;
 };

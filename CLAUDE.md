@@ -105,7 +105,7 @@ Folders and files in this table that don't exist yet are created when first need
   - `cmake --preset windows`
   - `cmake --build --preset dev` (RelWithDebInfo, development build), `--preset debug`, or `--preset release`
   - `ctest --preset dev` (or `debug` / `release`)
-  - release archive: `cmake --build --preset release --target package_release` -> `out/release/ProjectStonehenge-<version>-win64.zip` (executable, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `README.md` only; Release configuration only; stops on game-data names or signatures; `cmake/PackageRelease.cmake`)
+  - release archive: `cmake --build --preset release --target package_release` -> `out/release/ProjectStonehenge-<version>-win64.zip` (executable, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `README.md`, `keybinds.md` from `docs/release/` only; Release configuration only; stops on game-data names or signatures; `cmake/PackageRelease.cmake`)
   - executable: `build\windows\src\<Config>\ProjectStonehenge.exe`; parameters: `docs/port/command-line.md`
 - Development build = every configuration except Release (`AC04_DEV_BUILD=1`): console window, debug overlay on by default (`\` opens it), F8 native screenshot, the development parameters of `docs/port/command-line.md` (grouped by purpose, with recipes); Vulkan validation only with `--vk-validation` (User decision 2026-10-16: the layer makes the hangar run at ~13 fps). Frame-rate overlay: `--fps-overlay` (all builds).
 - After any dependency change: `python tools/check_notices.py`.

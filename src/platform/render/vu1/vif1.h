@@ -89,8 +89,9 @@ public:
     std::uint64_t Runs() const { return runs_; }
 
 private:
-    void Command(std::uint32_t code);
-    void Unpack(const std::uint32_t* data);
+    // `data`: the command's data words (null for commands without data), in place or collected.
+    void Command(std::uint32_t code, const std::uint8_t* data);
+    void Unpack(const std::uint8_t* data);
     void RunProgram(std::uint32_t start, bool continue_);
     void SwapTops();
 

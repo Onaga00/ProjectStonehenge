@@ -1253,19 +1253,25 @@ bool GsBackend::ConvertCore(VkCommandBuffer cmd, int frame, Target& src, const C
     return true;
 }
 
-void GsBackend::Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d, const std::array<int, 4>& box) {
-    // Texels to convert: the ones the draw can read (Record's read_box), within the feedback image.
+void GsBackend::Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d, const std::array<int, 8>& spans) {
+    // Texels to convert: the ones the draw can read (Record's read_spans), within the feedback image.
     ConvRequest r;
-    r.u0 = std::clamp(box[0], 0, kFeedbackWidth);
-    r.v0 = std::clamp(box[1], 0, kTargetHeight);
-    r.u1 = std::clamp(box[2], r.u0, kFeedbackWidth);
-    r.v1 = std::clamp(box[3], r.v0, kTargetHeight);
     r.psm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
     r.tbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14));
     r.tbw = static_cast<std::uint32_t>(Bits(d.tex0, 14, 6));
     r.texa = static_cast<std::uint32_t>(Bits(d.texa, 0, 8) | Bits(d.texa, 15, 1) << 15 | Bits(d.texa, 32, 8) << 16);
     r.clut = d.frame_clut.get();
-    if (ConvertCore(cmd, frame, src, r)) Mark(cmd, GpuSection::kConvert);
+    bool any = false;
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            r.u0 = std::clamp(spans[x * 2], 0, kFeedbackWidth);
+            r.u1 = std::clamp(spans[x * 2 + 1], r.u0, kFeedbackWidth);
+            r.v0 = std::clamp(spans[4 + y * 2], 0, kTargetHeight);
+            r.v1 = std::clamp(spans[4 + y * 2 + 1], r.v0, kTargetHeight);
+            if (r.u1 > r.u0 && r.v1 > r.v0) any = ConvertCore(cmd, frame, src, r) || any;
+        }
+    }
+    if (any) Mark(cmd, GpuSection::kConvert);
 }
 
 GsBackend::Target* GsBackend::NewerView(const Target& t) {
@@ -1925,8 +1931,8 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
                zbuf_owner_.count(d.Fbp()) != 0;
     };
     // Texels of draw i's texture that its pixels can read, [u0, u1) x [v0, v1): the box of its
-    // vertices' texture coordinates with the bilinear margin, through the wrap mode (repeat: the whole
-    // texture; region repeat: MAX up to MIN | MAX; clamp and region clamp: the box within the
+    // vertices' texture coordinates with the bilinear margin, through the wrap mode (repeat: the box
+    // when it lies within one period, otherwise the whole texture; region repeat: MAX up to MIN | MAX; clamp and region clamp: the box within the
     // texture or the region). Used to copy or convert only that part of a frame buffer read as a
     // texture (validation.md §2al).
     auto read_box = [&](std::size_t i, const DrawCommand& d) {
@@ -1956,7 +1962,19 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
             const int mn = static_cast<int>(Bits(d.clamp, a == 0 ? 4 : 24, 10));
             const int mx = static_cast<int>(Bits(d.clamp, a == 0 ? 14 : 34, 10));
             int b0 = 0, b1 = size[a];
-            if (mode == 3) {
+            if (mode == 0) {
+                // Repeat: the whole texture, unless the vertices' box with the bilinear margin lies
+                // within one period, where no coordinate wraps (the sky's 1024-texel work-page reads
+                // use 128 texels; validation.md §2ar IG-5).
+                if (known) {
+                    const int c0 = static_cast<int>(std::floor(lo[a])) - 1;
+                    const int c1 = static_cast<int>(std::ceil(hi[a])) + 2;
+                    if (c0 >= 0 && c1 <= size[a] && c0 < c1) {
+                        b0 = c0;
+                        b1 = c1;
+                    }
+                }
+            } else if (mode == 3) {
                 // (c & MIN) | MAX for any c: from MAX up to MIN | MAX.
                 b0 = mx;
                 b1 = (mn | mx) + 1;
@@ -1974,6 +1992,64 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
             box[a + 2] = b1;
         }
         return box;
+    };
+    // The same texels as one or two ranges per axis, for the conversions (gs_conv.comp, the most
+    // costly copies): with repeat and region repeat the vertices' box with its margin is mapped
+    // through the wrap exactly as gs.frag Wrap does, so a margin texel that wraps to the far edge
+    // (-1 -> MSK | FIX) adds a range of its own instead of widening the box to the whole texture
+    // (the sky's work-page reads: region repeat MSKU 0x3F7 over UV 0.5-128.5; validation.md §2ar
+    // IG-5). [u0, u1, u2, u3, v0, v1, v2, v3]: ranges [0, 1) and [2, 3) per axis, the second empty
+    // when b <= a.
+    auto read_spans = [&](std::size_t i, const DrawCommand& d) {
+        const std::array<int, 4> box = read_box(i, d);
+        std::array<int, 8> spans{box[0], box[2], 0, 0, box[1], box[3], 0, 0};
+        if (ranges[i].second == 0) return spans;
+        const int size[2] = {1 << std::min<int>(static_cast<int>(Bits(d.tex0, 26, 4)), 10),
+                             1 << std::min<int>(static_cast<int>(Bits(d.tex0, 30, 4)), 10)};
+        float lo[2] = {1e9f, 1e9f}, hi[2] = {-1e9f, -1e9f};
+        for (std::size_t k = ranges[i].first; k < ranges[i].first + ranges[i].second; ++k) {
+            const Vertex& v = verts[k];
+            float c[2] = {v.s, v.t};
+            if (!d.fst) {
+                if (!(v.q > 0.0f)) return spans;
+                c[0] = v.s / v.q * static_cast<float>(size[0]);
+                c[1] = v.t / v.q * static_cast<float>(size[1]);
+            }
+            for (int a = 0; a < 2; ++a) {
+                lo[a] = std::min(lo[a], std::clamp(c[a], -1e6f, 1e6f));
+                hi[a] = std::max(hi[a], std::clamp(c[a], -1e6f, 1e6f));
+            }
+        }
+        for (int a = 0; a < 2; ++a) {
+            const int mode = static_cast<int>(Bits(d.clamp, a == 0 ? 0 : 2, 2));
+            if (mode != 0 && mode != 3) continue;
+            const int mn = static_cast<int>(Bits(d.clamp, a == 0 ? 4 : 24, 10));
+            const int mx = static_cast<int>(Bits(d.clamp, a == 0 ? 14 : 34, 10));
+            const int c0 = static_cast<int>(std::floor(lo[a])) - 1;
+            const int c1 = static_cast<int>(std::ceil(hi[a])) + 2;
+            if (c1 <= c0 || c1 - c0 > 1024) continue;  // keeps read_box's range
+            std::array<bool, 1024> hit{};
+            for (int c = c0; c < c1; ++c) hit[mode == 0 ? (c & (size[a] - 1)) : ((c & mn) | mx)] = true;
+            // The texels hit, as at most two ranges: split at the widest gap between them.
+            int first = -1, last = -1, gap0 = 0, gap1 = 0;
+            for (int t = 0; t < 1024; ++t) {
+                if (!hit[t]) continue;
+                if (last >= 0 && t - last - 1 > gap1 - gap0) {
+                    gap0 = last + 1;
+                    gap1 = t;
+                }
+                if (first < 0) first = t;
+                last = t;
+            }
+            if (first < 0) continue;
+            int* s = &spans[a * 4];
+            if (gap1 > gap0) {
+                s[0] = first, s[1] = gap0, s[2] = gap1, s[3] = last + 1;
+            } else {
+                s[0] = first, s[1] = last + 1, s[2] = 0, s[3] = 0;
+            }
+        }
+        return spans;
     };
     {
         // Native rows each target needs this frame (its scissors), then the scratch images for the
@@ -2230,7 +2306,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
             const bool direct = src && src->psm == 0 && (tpsm == kPsmCt32 || tpsm == kPsmCt24) && src->fbw == tbw;
             if (src && !direct) {
                 end_pass();
-                Convert(cmd, frame, *src, d, read_box(i, d));
+                Convert(cmd, frame, *src, d, read_spans(i, d));
             } else if (src) {
                 tex_scale = src->scale;
                 // The copy keeps the source's scale: the draw samples it at tex_scale host texels per

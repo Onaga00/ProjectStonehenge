@@ -257,6 +257,17 @@ Measured (GD-3): the no-save intro at 1× has 4 frames with more than 16 ms of C
 | Pipeline reuse | `GsBackend::Record` (`pipeline` lambda) | Consecutive draws with the same key skip `GetPipeline` |
 | Blended copies replayed | `Renderer::SubmitBlendedStep`, `GsState::ProcessGifTraced` / `ReplayVertices`, `FrameInterpolator::StepSerial` | The first copy of a step is processed and traced (the kick of every draw-list vertex and of its colour, the XYOFFSET of every kick, the texel ranges of textured sprites, lines and points). A later copy of the same step is parsed for vertex writes only; everything else must be the traced bytes, and the texel ranges must not change. Its draws are the traced ones with the new vertices; no texture work (textures and the GPU's copy of local memory stay as the traced frame left them). Any other case processes the copy again |
 
+### 2.9 Host uploads into local memory (2026-11-04)
+
+`validation.md` IG-9. `GsMemory::WriteImage` keeps, per upload packet (destination, rectangle, start pixel, size), the bytes last written and the generations of the blocks they wrote: a packet that repeats them onto unchanged blocks is skipped.
+
+| Path | When | Notes |
+|---|---|---|
+| Whole blocks | the rectangle lies on block boundaries and the packet holds whole block rows (the whole transfer, or a piece ending on a block row) | each block assembled in the GS layout, compared and stored at once; the assembled 256 bytes are kept with the packet record (`LastUpload::block_bytes`) |
+| Kept blocks | the packet repeats its last bytes, but other uploads changed some of its blocks since (the hangar: room, light map and skin over the same memory every step) | the kept blocks are compared and stored again without assembling them; exact, since a block's bytes depend only on the packet's bytes and its key |
+| Runs | other byte-sized and 4-bit formats | a run inside one block row per step, the block base once |
+| Pixels | 24-bit and the rest | `WritePixel` per pixel |
+
 ## 3. GPU time measurement (2026-10-30)
 
 `src/platform/render/gpu_profiler.*`; runs and results: `validation.md` §2ao.

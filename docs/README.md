@@ -89,6 +89,7 @@ Using and building on the port:
 
 | File | Contents |
 |---|---|
+| `release/keybinds.md` | the players' guide to the default controls and how to change them in `controls.ini`; shipped as `keybinds.md` in the release archive (`cmake/PackageRelease.cmake`) |
 | `port/port-features.md` | what the port adds and how it is built: settings (where they live, rules, display defaults, every `settings.json` key), presentation, the GRAPHICS page, Modern control types, the port-owned guest memory, renderer caches, the frame-rate overlay; §8 the debug overlay (features, dependency, rules) |
 | `port/command-line.md` | every command-line parameter, grouped (all builds; development builds: disc and card, start points, input, run control, dumps, renderer), development-build keys, recipes, the disc check at start |
 | `port/renderer.md` | renderer studies and work: §1 internal rendering resolution 1-8x (study, as-built table §1.7, anti-aliasing and anisotropic filtering feasibility §1.8); §2 what CPU work could move to the GPU, GPU texture decoding, generation-based texture cache and per-texture images (plan, step 1 measurement, as built 2026-10-22); §3 GPU time measurement (timestamps, `--gpu-profile`, 2026-10-30) |

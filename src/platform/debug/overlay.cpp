@@ -345,6 +345,8 @@ void DebugOverlay::DrawPerformance(const OverlayFrameData& data) {
     ImGui::Text("Simulation: %s, 59.94 Hz fixed step", data.game_running ? "running" : "stopped");
     ImGui::Text("Steps this frame: %u   total: %llu", data.ticks_run, static_cast<unsigned long long>(data.vblank_count));
     ImGui::Text("Dropped steps (catch-up limit 4): %llu", static_cast<unsigned long long>(data.dropped_ticks));
+    ImGui::Text("Game thread: %.2f ms for these steps (VIF1 + VU1 HLE %.2f ms)", data.ticks_ms, data.ticks_vif1_ms);
+    ImGui::Text("Waiting for the render thread (incl. v-sync): %.2f ms (last frame)", data.render_wait_ms);
     ImGui::Text("Interpolation alpha: %.3f", data.alpha);
     ImGui::Separator();
     ImGui::TextUnformatted("DMA intake (counted, not drawn yet)");
@@ -593,27 +595,6 @@ void DebugOverlay::DrawGraphics(const OverlayFrameData& data) {
     combo("Window", mode, kModes, 2);
     p.window_mode = mode == 0 ? WindowMode::Fullscreen : WindowMode::Windowed;
 
-    // Windowed client size: fixed choices (4:3 and 16:9), or the current one.
-    static constexpr int kSizes[][2] = {{960, 720},   {1280, 960},  {1600, 1200}, {1920, 1440},
-                                        {1280, 720},  {1600, 900},  {1920, 1080}, {2560, 1440}};
-    char current[32];
-    std::snprintf(current, sizeof(current), "%d x %d", p.window_width, p.window_height);
-    ImGui::BeginDisabled(p.window_mode != WindowMode::Windowed);
-    if (ImGui::BeginCombo("Window size", current)) {
-        for (const auto& sz : kSizes) {
-            char text[32];
-            std::snprintf(text, sizeof(text), "%d x %d", sz[0], sz[1]);
-            const bool selected = sz[0] == p.window_width && sz[1] == p.window_height;
-            if (ImGui::Selectable(text, selected) && !selected) {
-                p.window_width = sz[0];
-                p.window_height = sz[1];
-                changed = true;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-
     if (ImGui::Checkbox("V-sync", &p.vsync)) changed = true;
 
     int cap = 0;
@@ -629,11 +610,37 @@ void DebugOverlay::DrawGraphics(const OverlayFrameData& data) {
 
     if (ImGui::Checkbox("Frame interpolation", &p.frame_interpolation)) changed = true;
 
-    int scale = std::clamp(p.internal_scale, 1, kMaxInternalScale) - 1;
-    const char* const kScales[] = {"1x (native)", "2x", "3x", "4x", "5x", "6x", "7x", "8x"};
-    static_assert(std::size(kScales) == kMaxInternalScale);
-    combo("Internal resolution", scale, kScales, kMaxInternalScale);
-    p.internal_scale = scale + 1;
+    // Internal resolution: only the multiplier is chosen; the resulting render size is the presented
+    // draw buffer (512 or 640 x 448, set by the game) times the multiplier.
+    const bool have_native = data.native_scale > 0 && data.native_width > 0 && data.native_height > 0;
+    const int base_w = have_native ? data.native_width / data.native_scale : 0;
+    const int base_h = have_native ? data.native_height / data.native_scale : 448;
+    const auto scale_text = [&](int n, char* out, size_t size) {
+        if (base_w > 0)
+            std::snprintf(out, size, "%dx%s  (%d x %d)", n, n == 1 ? " native" : "", base_w * n, base_h * n);
+        else
+            std::snprintf(out, size, "%dx%s  (%d lines)", n, n == 1 ? " native" : "", base_h * n);
+    };
+    int scale = std::clamp(p.internal_scale, 1, kMaxInternalScale);
+    char scale_current[48];
+    scale_text(scale, scale_current, sizeof(scale_current));
+    if (ImGui::BeginCombo("Internal resolution", scale_current)) {
+        for (int n = 1; n <= kMaxInternalScale; ++n) {
+            char text[48];
+            scale_text(n, text, sizeof(text));
+            const bool selected = n == scale;
+            if (ImGui::Selectable(text, selected) && !selected) {
+                scale = n;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    p.internal_scale = scale;
+    if (have_native) {
+        ImGui::TextDisabled("  render resolution now: %d x %d (%dx of %d x %d)", data.native_width,
+                            data.native_height, data.native_scale, base_w, base_h);
+    }
 
     int filter = p.filter == ScaleFilter::Sharp ? 0 : 1;
     const char* const kFilters[] = {"Sharp", "Smooth"};

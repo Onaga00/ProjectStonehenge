@@ -154,7 +154,7 @@ ctest --preset release
 
 Output: `build\windows\src\Release\ProjectStonehenge.exe`. No console window. The debugger is off by default, and only the release command-line options are accepted.
 
-To make the release archive, run `cmake --build --preset release --target package_release`. It writes `out\release\ProjectStonehenge-<version>-win64.zip` with the executable, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `README.md`, and nothing else. It packages only the Release configuration and stops if a file looks like game data.
+To make the release archive, run `cmake --build --preset release --target package_release`. It writes `out\release\ProjectStonehenge-<version>-win64.zip` with the executable, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `README.md` and `keybinds.md` (the default controls and how to change them, from `docs/release/keybinds.md`), and nothing else. It packages only the Release configuration and stops if a file looks like game data.
 
 **Development build**
 

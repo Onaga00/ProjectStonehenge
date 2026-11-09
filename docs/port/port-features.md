@@ -126,6 +126,8 @@ Lines are `Name = input, input`, grouped in sections, with notes after `;` or `#
 | Pause | START | Escape | ours |
 | Menu up/down/left/right, Accept, Back | d-pad, ×, △ | arrows, Return / Keypad Enter, Backspace | ours |
 
+Players' guide to these defaults and to editing `controls.ini`: `docs/release/keybinds.md`, shipped in the release archive as `keybinds.md` (User request 2026-11-10). Update it together with the default file (`kDefaultText` in `src/platform/controls_file.cpp`).
+
 The keys marked "ours" stay until the User checks them in AC7's key settings. The arrow keys are the d-pad, not flight controls: they move through menus, and in flight up levels the aircraft and down changes the view.
 
 ### Mouse (2026-10-31, User request)
@@ -138,6 +140,7 @@ The mouse acts as a stick for port 1. Its settings are in the `[Mouse]` section 
 | `Sensitivity` | 0.1–10 | 1.0 |
 | `Invert up/down` | `yes` / `no`; no: mouse forward = stick forward (nose down) | `no` |
 | `Return to centre` | `yes`: the deflection follows the mouse's speed; `no`: the stick stays where the mouse moved it (400 pixels from centre to full) | `yes` |
+| `Hold to swap stick` (2026-11-10, User request) | input list, as a `[Keyboard]` action; empty = never. While one is held each mouse axis steers the other stick: `Roll`, `Pitch`, `Yaw` become `Camera` on the same axis, `Camera` becomes `Roll` (left/right) or `Pitch` (up/down) (`SwappedTarget`). On press and release the mouse stick restarts from the centre, so the stick it leaves centres at once. A file without the line gets the default | `Left Alt, Right Alt` |
 
 With return to centre, each tick keeps 80 % of the deflection and adds the new motion. At sensitivity 1, 12 pixels per tick (720 per second) gives full deflection, and the stick centres about 0.2 s after the mouse stops.
 
@@ -149,9 +152,10 @@ With return to centre, each tick keeps 80 % of the deflection and adds the new m
 **Other details.**
 - The stick advances once per game tick (`InputBackend::StepTick`), not per presented frame, so the feel does not depend on the frame rate.
 - The game makes the stick round as it does a DualShock 2's (`ConvertPadInput`), so diagonals behave as on the pad.
-- Mouse buttons and the wheel are ordinary inputs of `[Keyboard]` actions. They are ignored while the overlay has the keyboard.
+- The mouse drives PS2 **stick bytes**, not game actions: `Roll`/`Pitch` are the left stick, `Camera` the right stick. What a stick does in the game follows its CONTROL TYPE, as for a gamepad.
+- Mouse buttons and the wheel are ordinary inputs of `[Keyboard]` actions. They are ignored while the overlay has the keyboard. The side buttons (`Mouse Back` = X1, `Mouse Forward` = X2) can be bound like any other input and have no action by default (User request 2026-11-10; the file's guide says so).
 - Input logs record the resulting pad bytes, so replays stay exact.
-- **Tests:** `tests/test_input.cpp` (stick with and without return to centre, invert and sensitivity, wheel presses).
+- **Tests:** `tests/test_input.cpp` (stick with and without return to centre, invert and sensitivity, wheel presses, swapped targets); `tests/test_controls_file.cpp` (swap default Alt, side buttons unbound by default, side buttons and the swap entry in a player's file).
 
 ### Map button without pressure (2026-10-31, User request)
 
@@ -356,7 +360,7 @@ Code: `src/platform/debug/overlay.{h,cpp}`; hook for scene requests: `src/common
 - **Toggle:** the typed character in `"overlay_toggle"` (default `"\"`, matched on SDL text input, so any keyboard layout works), or `"key:<SDL scancode name>"` (e.g. `"key:F12"`).
 - **Input:** while an overlay window has keyboard focus, the keyboard is not mapped to the game's pad; gamepads still reach the game.
 - **Look:** square style (every rounding 0, border 1), drawn in the output pass after the game image at host resolution. `imgui.ini` is not written (`IniFilename = nullptr`).
-- **Graphics panel** (2026-10-31, User request; "Sim: no", presentation only): every presentation setting that applies while the port runs: window mode, windowed size (4:3 and 16:9 choices), v-sync, frame cap (disabled with v-sync on), frame interpolation, internal resolution 1×–8×, scaling filter, anti-aliasing. Each change applies at once for the session, as on the GRAPHICS page (§3); "Save to settings.json" writes the values into the file's own values (session-only command-line values are not saved), "Defaults for this display" sets the §1 defaults (the windowed size and the SCREEN RATIO default stay). Not in the panel: `presentation.default_screen_ratio`, which applies only at boot. The overlay hands the change to the host after it builds the frame (`DebugOverlay::TakePresentationRequest`); `src/main.cpp` applies it like the GRAPHICS page. A GRAPHICS page that is open keeps the values it opened with.
+- **Graphics panel** (2026-10-31, User request; "Sim: no", presentation only): every presentation setting that applies while the port runs: window mode, v-sync, frame cap (disabled with v-sync on), frame interpolation, internal resolution, scaling filter, anti-aliasing. The internal resolution is chosen only as a multiplier (1×–8×); each choice shows the render size it gives (presented draw buffer × N, e.g. 640 × 448 at 2× = 1280 × 896) and a line reports the renderer's current render size. No resolution or windowed size can be typed or picked directly (User request 2026-11-09); `presentation.window_width`/`window_height` stay file-only. Each change applies at once for the session, as on the GRAPHICS page (§3); "Save to settings.json" writes the values into the file's own values (session-only command-line values are not saved), "Defaults for this display" sets the §1 defaults (the windowed size and the SCREEN RATIO default stay). Not in the panel: `presentation.default_screen_ratio`, which applies only at boot. The overlay hands the change to the host after it builds the frame (`DebugOverlay::TakePresentationRequest`); `src/main.cpp` applies it like the GRAPHICS page. A GRAPHICS page that is open keeps the values it opened with.
 - **Input panel** (2026-10-31, read-only): per port the host device, whether it reports pressures, the button bits and sticks, whether the map button steps or holds, the 12 pressures from the host, the game's pad type (5 = DualShock 2 pressure mode) and the pressures the game last read (libpad port record +0x40).
 - **Panels** (all read-only, "Sim: no"):
   - *Performance:* presented fps and frame-time graph (240 frames), the "FPS overlay (top right)" checkbox, the renderer's CPU time of the last frame (GS processing, recording) and its texture statistics (textures drawn, GPU decodes, CPU uploads, GPU memory updates, KiB uploaded, texture images held and their MiB; §6), its GPU work of the last frame (render passes, pipeline barriers, frame-buffer copies and their Mpixels), steps this frame, total steps, dropped steps (catch-up limit 4), interpolation alpha, DMA intake per step (GIF/VIF1 qwords, sends, bad chains), last DISPFB/DISPLAY.

@@ -43,12 +43,18 @@ struct OverlayFrameData {
     u64 dropped_ticks = 0;        // ticks dropped by the catch-up limit (all time)
     double alpha = 0.0;           // interpolation fraction
     bool game_running = false;
+    // Host time: the game ticks of this frame (game thread; VIF1 sends with the VU1 HLE included in
+    // ticks_ms and shown apart), and the main thread's waits for the render thread in the last frame.
+    double ticks_ms = 0.0, ticks_vif1_ms = 0.0, render_wait_ms = 0.0;
     // DMA intake (milestone C: counted, not drawn).
     u64 gif_qwords = 0, vif1_qwords = 0;  // in the last simulation step
     u64 gif_sends = 0, vif1_sends = 0;    // all time
     u64 bad_chains = 0;
     std::array<u64, 5> dispenv{};          // PMODE, SMODE2, DISPFB, DISPLAY, BGCOLOR
     PresentationSettings presentation;     // in force this session (the Graphics panel edits a copy)
+    // Renderer's native image (presented draw buffer x internal scale) and its scale; read only
+    // while the render thread is idle (0 when not filled).
+    int native_width = 0, native_height = 0, native_scale = 0;
     std::array<PadState, 2> pads{};        // live host input per port (input backend)
     std::array<PadDeviceInfo, 2> pad_devices{};
 };

@@ -97,6 +97,15 @@ TEST_CASE("input: mouse stick") {
     }
 }
 
+TEST_CASE("input: the mouse's swap input steers the other stick") {
+    CHECK(SwappedTarget(MouseTarget::Roll, false) == MouseTarget::Camera);
+    CHECK(SwappedTarget(MouseTarget::Pitch, true) == MouseTarget::Camera);
+    CHECK(SwappedTarget(MouseTarget::Yaw, false) == MouseTarget::Camera);
+    CHECK(SwappedTarget(MouseTarget::Camera, false) == MouseTarget::Roll);
+    CHECK(SwappedTarget(MouseTarget::Camera, true) == MouseTarget::Pitch);
+    CHECK(SwappedTarget(MouseTarget::None, true) == MouseTarget::None);
+}
+
 TEST_CASE("input: a wheel notch is one press the game sees") {
     WheelPresses w;
     w.Add(2);

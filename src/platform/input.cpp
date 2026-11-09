@@ -187,6 +187,14 @@ void MouseStick::Step(float dx, float dy, const MouseSettings& settings) {
     y_ = std::clamp(y_, -1.0f, 1.0f);
 }
 
+MouseTarget SwappedTarget(MouseTarget target, bool vertical) {
+    switch (target) {
+        case MouseTarget::None: return MouseTarget::None;
+        case MouseTarget::Camera: return vertical ? MouseTarget::Pitch : MouseTarget::Roll;
+        default: return MouseTarget::Camera;  // roll, pitch, yaw
+    }
+}
+
 void WheelPresses::Add(int notches) {
     pending_ = std::min(pending_ + notches, 8);  // a fast spin does not queue presses for seconds
 }
@@ -297,6 +305,11 @@ void InputBackend::HandleEvent(const SDL_Event& event) {
 void InputBackend::StepTick(bool mouse_steers) {
     float dx = 0.0f, dy = 0.0f;
     SDL_GetRelativeMouseState(&dx, &dy);  // the motion since the last tick (also read when not steering)
+    // The swap input (held): the deflection starts again from the centre on the other stick, so
+    // the stick it leaves centres at once and nothing jumps onto the new one.
+    const bool swapped = mouse_steers && Sample(controls_.mouse.swap_hold, 0, true).pressed;
+    if (swapped != mouse_swapped_) mouse_.Reset();
+    mouse_swapped_ = swapped;
     if (mouse_steers) mouse_.Step(dx, dy, controls_.mouse);
     else mouse_.Reset();
     for (WheelPresses& w : wheel_) w.Step();
@@ -404,8 +417,9 @@ void InputBackend::AddMouseAxes(std::array<ControlLevel, kControlCount>& host) c
         host[neg].Add(n > 0.5f, n);
         host[pos].Add(p > 0.5f, p);
     };
-    add(controls_.mouse.horizontal, false, mouse_.X());
-    add(controls_.mouse.vertical, true, mouse_.Y());
+    const MouseTarget h = controls_.mouse.horizontal, v = controls_.mouse.vertical;
+    add(mouse_swapped_ ? SwappedTarget(h, false) : h, false, mouse_.X());
+    add(mouse_swapped_ ? SwappedTarget(v, true) : v, true, mouse_.Y());
 }
 
 void InputBackend::SetVibration(int port, bool small_on, std::uint8_t large) {

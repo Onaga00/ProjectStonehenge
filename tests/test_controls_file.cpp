@@ -67,6 +67,31 @@ TEST_CASE("controls: AC7-style keyboard defaults") {
     CHECK(b.mouse.horizontal == MouseTarget::Roll);
     CHECK(b.mouse.vertical == MouseTarget::Pitch);
     CHECK(b.mouse.return_to_centre);
+    // Hold Alt: the mouse steers the other stick. The side buttons have no action by default.
+    CHECK(Has(b.mouse.swap_hold, "key:Left Alt"));
+    CHECK(Has(b.mouse.swap_hold, "key:Right Alt"));
+    for (const auto& list : b.keyboard) {
+        CHECK_FALSE(Has(list, "mouse:x1"));
+        CHECK_FALSE(Has(list, "mouse:x2"));
+    }
+}
+
+TEST_CASE("controls: hold to swap stick and the mouse side buttons") {
+    std::vector<std::string> warnings;
+    ControlBindings b = ParseControls(
+        "[Keyboard]\nRear view = Mouse Back\nChange view = Mouse Forward\n"
+        "[Mouse]\nHold to swap stick = Mouse X1, Left Shift\n",
+        warnings);
+    CHECK(warnings.empty());
+    CHECK(Has(b.keyboard[kR3], "mouse:x1"));
+    CHECK(Has(b.keyboard[kDown], "mouse:x2"));
+    CHECK(Has(b.mouse.swap_hold, "mouse:x1"));
+    CHECK(Has(b.mouse.swap_hold, "key:Left Shift"));
+    CHECK_FALSE(Has(b.mouse.swap_hold, "key:Left Alt"));
+    b = ParseControls("[Mouse]\nHold to swap stick =\n", warnings);
+    CHECK(b.mouse.swap_hold.empty());
+    b = ParseControls("[Mouse]\nleft/right = roll\n", warnings);  // an older file without the line
+    CHECK(Has(b.mouse.swap_hold, "key:Left Alt"));
 }
 
 TEST_CASE("controls: gamepad defaults are the layout of earlier builds") {

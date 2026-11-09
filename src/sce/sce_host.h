@@ -64,6 +64,9 @@ struct DmaStats {
     u64 step_qwords_gif = 0;        // accumulating in the current step
     u64 step_qwords_vif1 = 0;
     u64 bad_chains = 0;             // chains with an unknown tag or that did not end
+    // Host time spent in the VIF1 sends (sceDmaSend channel 1: VIF unpacking and the VU1 HLE
+    // programs), all time; the host reads it around each tick (performance figures only).
+    u64 vif1_ns = 0;
     // Last values written by sceGsPutDispEnv (PMODE, SMODE2, DISPFB, DISPLAY, BGCOLOR).
     std::array<u64, 5> dispenv{};
     // GIF data (PATH2 from VIF1 DIRECT, PATH3) of the current step, and of the completed steps not

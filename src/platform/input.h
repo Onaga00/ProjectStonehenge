@@ -86,11 +86,19 @@ struct MouseSettings {
     float sensitivity = 1.0f;       // 0.1-10
     bool invert_vertical = false;   // off: mouse forward = stick forward (nose down)
     bool return_to_centre = true;   // on: the stick follows the mouse's speed; off: it stays where it was moved
+    // "Swap stick (hold)" (User request 2026-11-10): while one of these is held, each mouse axis
+    // steers the other stick (SwappedTarget). Default Left Alt, Right Alt (controls_file.cpp).
+    std::vector<InputSource> swap_hold;
     bool operator==(const MouseSettings& o) const {
         return horizontal == o.horizontal && vertical == o.vertical && sensitivity == o.sensitivity &&
-               invert_vertical == o.invert_vertical && return_to_centre == o.return_to_centre;
+               invert_vertical == o.invert_vertical && return_to_centre == o.return_to_centre &&
+               swap_hold == o.swap_hold;
     }
 };
+
+// What a mouse axis steers while the swap input is held: the flight controls (left stick, and yaw)
+// become the camera on the same mouse axis; the camera becomes roll (left/right) or pitch (up/down).
+MouseTarget SwappedTarget(MouseTarget target, bool vertical);
 
 // The bindings of controls.ini, by PS2 control.
 struct ControlBindings {
@@ -197,6 +205,7 @@ private:
     ControlBindings controls_{};
     std::array<bool, 2> modern_{};
     MouseStick mouse_;
+    bool mouse_swapped_ = false;  // the mouse's swap input is held (SwappedTarget)
     std::array<WheelPresses, 2> wheel_{};  // up, down
 };
 
