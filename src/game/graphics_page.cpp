@@ -22,9 +22,9 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 // Port menu area slots (port_menu.h; 0-3 are CONTROLLER SETUP's).
 enum Slot : u32 {
     kSlotTitle = 4,
-    kSlotNames = 5,    // 7 rows
-    kSlotValues = 12,  // 7 rows
-    kSlotRects = 19,
+    kSlotNames = 5,    // 8 rows, two names per slot (kNameBytes each)
+    kSlotValues = 9,   // 8 rows
+    kSlotRects = 17,
     kSlotItems = 20,
     kSlotItemText = 21,
 };
@@ -38,7 +38,7 @@ struct Row {
 };
 
 // Rows and their choices; square 0 is the leftmost.
-constexpr s32 kRows = 7;
+constexpr s32 kRows = 8;
 constexpr Row kRowTable[kRows] = {
     {"FULLSCREEN", 2, {"ON", "OFF"}},
     {"V-SYNC", 2, {"ON", "OFF"}},
@@ -47,13 +47,22 @@ constexpr Row kRowTable[kRows] = {
     {"INTERNAL RES.", 8, {"1X", "2X", "3X", "4X", "5X", "6X", "7X", "8X"}},
     {"SCALING FILTER", 2, {"SHARP", "SMOOTH"}},
     {"ANTI-ALIASING", 3, {"OFF", "FXAA", "SMAA"}},
+    // presentation.ultrawide / ultrawide_4x3_fov: off, or Hor+ from the 4:3 or the 16:9 view.
+    {"ULTRAWIDE", 3, {"OFF", "4:3 FOV", "16:9 FOV"}},
 };
+// Row names share their slots (port_menu.h has 16 slots for this page): two per slot.
+constexpr u32 kNameBytes = 0x20;
+static_assert(kSlotNames + (kRows + 1) / 2 <= kSlotValues && kSlotValues + kRows <= kSlotRects,
+              "GRAPHICS slots overlap");
+static_assert(kSlotRects < kSlotItems, "GRAPHICS slots overlap");
 constexpr s32 kFrameCaps[5] = {60, 120, 144, 240, 360};
 
 // Layout (12.4 screen units): title row as BRIGHTNESS, then one row per setting.
 constexpr s32 kTitleY = 0x520;
 constexpr s32 kFirstRowY = 0x6A0;
-constexpr s32 kRowStep = 0x1C0;
+// 24 pixels: eight rows in the frame that held seven rows of 28, so the last row stays inside the
+// BRIGHTNESS view's inner frame (y 97-298) and the frames keep their sizes.
+constexpr s32 kRowStep = 0x180;
 constexpr s32 kNameX = 0x300;
 constexpr s32 kValueX = 0xD00;
 constexpr s32 kSquareX = 0x1500;
@@ -90,7 +99,8 @@ s32 Choice(const port::GraphicsOptions& g, s32 row) {
             return 4;
         case 4: return g.internal_scale < 1 ? 0 : (g.internal_scale > 8 ? 7 : g.internal_scale - 1);
         case 5: return g.smooth_filter ? 1 : 0;
-        default: return g.antialiasing < 0 ? 0 : (g.antialiasing > 2 ? 2 : g.antialiasing);
+        case 6: return g.antialiasing < 0 ? 0 : (g.antialiasing > 2 ? 2 : g.antialiasing);
+        default: return !g.ultrawide ? 0 : (g.ultrawide_4x3_fov ? 1 : 2);
     }
 }
 
@@ -102,7 +112,12 @@ void SetChoice(port::GraphicsOptions& g, s32 row, s32 c) {
         case 3: g.frame_cap = kFrameCaps[c]; break;
         case 4: g.internal_scale = c + 1; break;
         case 5: g.smooth_filter = c == 1; break;
-        default: g.antialiasing = c; break;
+        case 6: g.antialiasing = c; break;
+        default:
+            // OFF keeps the field-of-view choice, so turning ultrawide back on restores it.
+            g.ultrawide = c != 0;
+            if (c != 0) g.ultrawide_4x3_fov = c == 1;
+            break;
     }
 }
 
@@ -124,7 +139,7 @@ u32 PanelRects() {
     u32 w[12];
     for (u32 i = 0; i < 8; ++i) w[i] = GRef<u32>(0x003AF3D0 + i * 4);
     w[8] = (0x7200u + 0x0BA0u) << 16 | (0x6C00u + 0x1140u);  // centre (276, 186)
-    w[9] = 0x0DE0u << 16 | 0x1E80u;                             // 488 x 222 (seven rows)
+    w[9] = 0x0DE0u << 16 | 0x1E80u;                             // 488 x 222 (eight rows of 24)
     w[10] = 0x00D1C1A9u;
     w[11] = 0x3DCCCCCDu;  // 0.1
     return port_menu::Words(kSlotRects, w, 12);
@@ -256,7 +271,7 @@ void DrawGraphicsTexts(u32 list, s32 index, u32 obj) {
         for (s32 r = 0; r < kRows; ++r) {
             const f32 tr = fpu::Sub(t, static_cast<f32>(4 + r * 4));
             const s32 y = RowY(r);
-            DrawMenuText(tr, kNameX, y + kNameDy, 4, port_menu::String(kSlotNames + static_cast<u32>(r), kRowTable[r].name));
+            DrawMenuText(tr, kNameX, y + kNameDy, 4, port_menu::StringAt(kSlotNames + static_cast<u32>(r) / 2, (static_cast<u32>(r) % 2) * kNameBytes, kRowTable[r].name));
             const char* value = RowEnabled(g_Edit, r) ? kRowTable[r].values[Choice(g_Edit, r)] : "V-SYNC";
             DrawMenuText(fpu::Sub(tr, 8.0f), kValueX, y, 3, port_menu::String(kSlotValues + static_cast<u32>(r), value));
         }

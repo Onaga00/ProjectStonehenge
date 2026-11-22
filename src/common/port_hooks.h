@@ -21,11 +21,14 @@ struct GraphicsOptions {
     bool smooth_filter = false;
     s32 antialiasing = 0;     // 0 off, 1 FXAA, 2 SMAA
     bool frame_interpolation = true;
+    bool ultrawide = true;           // presentation.ultrawide
+    bool ultrawide_4x3_fov = true;   // presentation.ultrawide_4x3_fov
 
     bool operator==(const GraphicsOptions& o) const {
         return fullscreen == o.fullscreen && vsync == o.vsync && frame_cap == o.frame_cap &&
                internal_scale == o.internal_scale && smooth_filter == o.smooth_filter &&
-               antialiasing == o.antialiasing && frame_interpolation == o.frame_interpolation;
+               antialiasing == o.antialiasing && frame_interpolation == o.frame_interpolation &&
+               ultrawide == o.ultrawide && ultrawide_4x3_fov == o.ultrawide_4x3_fov;
     }
     bool operator!=(const GraphicsOptions& o) const { return !(*this == o); }
 };

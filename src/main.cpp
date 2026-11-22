@@ -370,6 +370,8 @@ port::GraphicsOptions ToGraphicsOptions(const PresentationSettings& p) {
     g.smooth_filter = p.filter == ScaleFilter::Smooth;
     g.antialiasing = static_cast<s32>(p.antialiasing);
     g.frame_interpolation = p.frame_interpolation;
+    g.ultrawide = p.ultrawide;
+    g.ultrawide_4x3_fov = p.ultrawide_4x3_fov;
     return g;
 }
 
@@ -381,6 +383,8 @@ void ApplyGraphicsOptions(const port::GraphicsOptions& g, PresentationSettings& 
     p.filter = g.smooth_filter ? ScaleFilter::Smooth : ScaleFilter::Sharp;
     if (g.antialiasing >= 0 && g.antialiasing <= 2) p.antialiasing = static_cast<AntiAliasing>(g.antialiasing);
     p.frame_interpolation = g.frame_interpolation;
+    p.ultrawide = g.ultrawide;
+    p.ultrawide_4x3_fov = g.ultrawide_4x3_fov;
 }
 
 // Reloads settings.json when it changes on disk, so values can be edited while the port runs.
