@@ -15,6 +15,13 @@ Status: **Accepted** (User decision 2026-10-10; storage revised by the User 2026
 - OS-specific code is isolated in `src/platform/`, behind interfaces. `src/game/` and `src/sce/` contain no OS calls.
 - **File names are case-sensitive.** ISO file names are matched exactly as stored on the disc (uppercase, e.g. `DATA.CDP`, `SLUS_201.52`). The port never relies on case-insensitive lookup, not even on Windows.
 
+### 1a. Amendment: Linux build now (**Proposed**, issue #13)
+- Status: **Proposed**, waiting for the owner's decision. Sections 1-5 stay Accepted as they are.
+- Proposal: build and ship Linux x86-64 now instead of after the port is complete, as a native build of the same code (no game-code change), packaged as an AppImage for the Steam Deck and desktop distributions.
+- Scope: five POSIX files in `src/platform/posix/` behind the existing interfaces, compiler flags that give GCC/Clang the MSVC build's floating-point and integer behaviour, a Linux CMake preset, a `package_appimage` target and an Ubuntu 22.04 build container. Details and validation: `../port/linux.md`.
+- User data on Linux: `$XDG_DATA_HOME/projectstonehenge/` (fallback `~/.local/share/projectstonehenge/`), as §2 already specified.
+- Cost: one more build to keep compiling (the CI or the maintainer builds both). Windows stays the primary platform.
+
 ### 2. User data location
 - All files the port writes go under one per-user folder: **`%LOCALAPPDATA%\ProjectStonehenge\`** on Windows.
   - Linux later: `$XDG_DATA_HOME/projectstonehenge/` (fallback `~/.local/share/projectstonehenge/`); macOS later: `~/Library/Application Support/ProjectStonehenge/`.

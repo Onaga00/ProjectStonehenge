@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- ProjectStonehenge application icon (AppImage): a generic delta-wing silhouette. -->
+  <rect width="256" height="256" rx="40" fill="#14233a"/>
+  <circle cx="128" cy="128" r="92" fill="none" stroke="#3d6ea8" stroke-width="6"/>
+  <path d="M128 34 L142 104 L214 150 L214 166 L142 146 L138 194 L162 212 L162 224 L128 214 L94 224 L94 212 L118 194 L114 146 L42 166 L42 150 L114 104 Z"
+        fill="#e8eef6"/>
+</svg>

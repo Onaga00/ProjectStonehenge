@@ -1,6 +1,7 @@
 // Locations of everything the port writes (ADR-005 §2). Only this module builds these paths.
 #pragma once
 
+#include <cstdio>
 #include <filesystem>
 #include <string>
 
@@ -28,5 +29,9 @@ bool ResolvePaths(const std::filesystem::path& user_data_override, Paths& out, s
 // UTF-8 string <-> path (C++17: u8path / u8string).
 std::filesystem::path PathFromUtf8(const std::string& utf8);
 std::string PathToUtf8(const std::filesystem::path& path);
+
+// std::fopen for a host path, with a C mode string ("rb", "wb", ...). Windows needs the wide-string
+// form for non-ASCII folder names; elsewhere the native path is already a byte string.
+std::FILE* OpenFile(const std::filesystem::path& path, const char* mode);
 
 }  // namespace ac04::platform

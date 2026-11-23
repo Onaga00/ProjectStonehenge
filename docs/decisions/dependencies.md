@@ -59,6 +59,9 @@ Recommendation: **nlohmann/json**, pinned by FetchContent with a checksum. Setti
 | **CMake ≥ 3.24** | build system | BSD-3 | n/a (tool) | chosen by the User |
 | **glslang** (or **shaderc**) | GLSL → SPIR-V at build time | BSD-3 / Apache-2.0 / MIT mix (shaderc: Apache-2.0) | yes | build tool only; output SPIR-V is ours |
 | **doctest** (or GoogleTest BSD-3, Catch2 BSL-1.0) | unit and behaviour tests | MIT | yes | doctest is a single header and fast to compile |
+| **appimagetool** 1.9.1 (proposed, Linux AppImage; `../port/linux.md` §4) | packs the AppDir into an AppImage | MIT | yes | proposed with the Linux build (issue #13), needs the owner's approval; downloaded by `cmake/PackageAppImage.cmake` at packaging time, pinned by SHA-256; build tool only, not shipped |
+| **AppImage type 2 runtime** 20251108 (proposed) | the start-up stub at the front of every AppImage (mounts the embedded SquashFS image) | MIT; statically contains libfuse (LGPL-2.1), squashfuse (BSD-2-Clause) and zstd (BSD-3-Clause) | yes | downloaded with appimagetool, pinned by SHA-256; **shipped** inside the AppImage (listed in `THIRD_PARTY_NOTICES.md`) |
+| Ubuntu 22.04 container + CMake 3.31.6 / Ninja 1.11.1.4 from PyPI (proposed) | Linux build environment (`cmake/linux/Dockerfile`) | various (tools only) | n/a (tools) | glibc 2.35 so the binary runs on SteamOS 3; nothing from the image is shipped |
 
 ## Written in-house (no dependency proposed)
 

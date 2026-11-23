@@ -189,7 +189,7 @@ void DumpGuestRam(const Paths& paths, const char* name) {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     const auto file = dir / name;
-    if (std::FILE* f = _wfopen(file.c_str(), L"wb")) {
+    if (std::FILE* f = platform::OpenFile(file, "wb")) {
         std::fwrite(guest::Mem().Ram(), 1, guest::kRamSize, f);
         std::fwrite(guest::Mem().Scratchpad(), 1, guest::kScratchpadSize, f);
         std::fclose(f);
@@ -847,12 +847,12 @@ int Run(int argc, char** argv) {
                 std::filesystem::create_directories(dir, ec);
                 char name[64];
                 std::snprintf(name, sizeof(name), "vif1_%06llu.bin", static_cast<unsigned long long>(vblank));
-                if (std::FILE* f = _wfopen((dir / name).c_str(), L"wb")) {
+                if (std::FILE* f = platform::OpenFile(dir / name, "wb")) {
                     std::fwrite(vif.data(), 4, vif.size(), f);
                     std::fclose(f);
                 }
                 std::snprintf(name, sizeof(name), "gif_%06llu.bin", static_cast<unsigned long long>(vblank));
-                if (std::FILE* f = _wfopen((dir / name).c_str(), L"wb")) {
+                if (std::FILE* f = platform::OpenFile(dir / name, "wb")) {
                     std::fwrite(gif.data(), 1, gif.size(), f);
                     std::fclose(f);
                 }
@@ -911,7 +911,7 @@ int Run(int argc, char** argv) {
         const auto dir = paths.user_data / "dumps";
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
-        alloc_log = _wfopen((dir / "allocs.txt").c_str(), L"w");
+        alloc_log = platform::OpenFile(dir / "allocs.txt", "w");
         if (alloc_log == nullptr) {
             AC04_LOG_ERROR("loader", "cannot write the allocation log");
         } else {
@@ -1065,7 +1065,7 @@ int Run(int argc, char** argv) {
                 if (cl.options.dump_vram) {
                     std::filesystem::create_directories(paths.user_data / "dumps", ec);
                     std::snprintf(name, sizeof(name), "vram_%06llu.bin", static_cast<unsigned long long>(job.vblank));
-                    if (std::FILE* f = _wfopen((paths.user_data / "dumps" / name).c_str(), L"wb")) {
+                    if (std::FILE* f = platform::OpenFile(paths.user_data / "dumps" / name, "wb")) {
                         std::fwrite(renderer.GsLocalMemory(), 1, render::gs::GsMemory::kSize, f);
                         std::fclose(f);
                     }

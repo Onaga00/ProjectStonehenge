@@ -1,5 +1,6 @@
 #include "platform/paths.h"
 
+#include <iterator>
 #include <system_error>
 
 namespace ac04::platform {
@@ -10,6 +11,16 @@ std::filesystem::path PathFromUtf8(const std::string& utf8) {
 
 std::string PathToUtf8(const std::filesystem::path& path) {
     return path.u8string();
+}
+
+std::FILE* OpenFile(const std::filesystem::path& path, const char* mode) {
+#ifdef _WIN32
+    wchar_t wide_mode[8] = {};
+    for (size_t i = 0; i + 1 < std::size(wide_mode) && mode[i]; ++i) wide_mode[i] = static_cast<wchar_t>(mode[i]);
+    return _wfopen(path.c_str(), wide_mode);
+#else
+    return std::fopen(path.c_str(), mode);
+#endif
 }
 
 bool ResolvePaths(const std::filesystem::path& user_data_override, Paths& out, std::string& error) {

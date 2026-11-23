@@ -6,7 +6,7 @@
 
 ![Latest release](https://img.shields.io/github/v/release/Onaga00/ProjectStonehenge?style=flat-square)
 ![License](https://img.shields.io/github/license/Onaga00/ProjectStonehenge?style=flat-square)
-![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Windows%20x64%20%7C%20Linux%20x86--64-blue?style=flat-square)
 
 <img src="docs/images/screenshot.png" alt="ProjectStonehenge running Ace Combat 04" width="800">
 
@@ -83,11 +83,11 @@ Default keyboard and mouse (in the style of ACE COMBAT 7 on the PC). Keys keep t
 - [ ] Performance optimizations
 - [ ] Modding support
 - [ ] A full catalog and map of the cut content, and a debug menu to explore it
-- [ ] Linux support
+- [x] Linux support (AppImage, Steam Deck)
 
 ## 💻 Requirements
 
-- Windows 10/11 (64-bit)
+- Windows 10/11 (64-bit), or Linux x86-64 with glibc 2.35 or newer (Steam Deck / SteamOS 3, Ubuntu 22.04+, Fedora 36+, ...), via the AppImage
 - GPU: any graphics card with **Vulkan 1.2** support and an up-to-date driver. Higher internal resolutions (4x–8x) need a correspondingly faster GPU
 - A dump of your own copy of *Ace Combat 04: Shattered Skies* (NTSC-U SLUS-20152) as an `.iso` file (ISO 9660, 2048-byte sectors; raw `.bin`/`.cue` dumps are not supported)
 
@@ -103,6 +103,10 @@ Default keyboard and mouse (in the style of ACE COMBAT 7 on the PC). Keys keep t
    - `saves\`: the memory card (PCSX2 folder card format)
    - `logs\`: the log of the last session (attach it to bug reports)
    - `cache\`: GS pipelines (recompiled with each gpu driver change)
+
+### Linux and Steam Deck
+
+Download `ProjectStonehenge-<version>-x86_64.AppImage`, make it executable (`chmod +x`, or in Dolphin: Properties → Permissions → *Is executable*) and start it. It needs the system's Vulkan driver (preinstalled on the Steam Deck) and nothing else. Data goes to `~/.local/share/projectstonehenge/` (same layout as on Windows; `saves/` can be copied between the two and PCSX2). On the Steam Deck, pick the ISO once in Desktop Mode, then add the AppImage to Steam as a *Non-Steam Game* (no Proton). Details: [`docs/port/linux.md`](docs/port/linux.md).
 
 ### Command-line options (release builds)
 
@@ -172,6 +176,17 @@ Output: `build\windows\src\RelWithDebInfo\ProjectStonehenge.exe` (or `Debug\`). 
 - the development command-line options ([`docs/port/command-line.md`](docs/port/command-line.md)).
 
 You can also open `build\windows\ProjectStonehenge.slnx` in Visual Studio and pick the configuration there.
+
+**Linux build and AppImage**
+
+Built in an Ubuntu 22.04 container so the binary runs on SteamOS and other distributions:
+
+```sh
+docker build -t stonehenge-linux cmake/linux
+docker run --rm -e AC04_GIT_COMMIT=$(git rev-parse --short=12 HEAD) -v "$PWD:/src:ro" -v "$PWD/out/release:/out" -v stonehenge-build:/build     stonehenge-linux sh /src/cmake/linux/build.sh release appimage
+```
+
+This builds, runs the tests and writes `out/release/ProjectStonehenge-<version>-x86_64.AppImage`. On a Linux machine with the packages from `cmake/linux/Dockerfile`: `cmake --preset linux`, `cmake --build --preset linux-release`, `ctest --preset linux-release`. See [`docs/port/linux.md`](docs/port/linux.md).
 
 ## Debugger
 
@@ -273,3 +288,5 @@ Fetched at build time, unmodified ([`docs/decisions/dependencies.md`](docs/decis
 [SMAA](https://github.com/iryoku/smaa) ·
 NVIDIA FXAA 3.11 ·
 [doctest](https://github.com/doctest/doctest)
+
+Linux AppImage packaging, downloaded at packaging time: [appimagetool](https://github.com/AppImage/appimagetool) (tool only) and the [AppImage type 2 runtime](https://github.com/AppImage/type2-runtime) (part of the AppImage file).
