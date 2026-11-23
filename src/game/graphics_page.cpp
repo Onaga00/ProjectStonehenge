@@ -22,8 +22,8 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 // Port menu area slots (port_menu.h; 0-3 are CONTROLLER SETUP's).
 enum Slot : u32 {
     kSlotTitle = 4,
-    kSlotNames = 5,    // 7 rows
-    kSlotValues = 12,  // 7 rows
+    kSlotRows = 5,     // 8 rows, one slot each: the name at +0, the value at +0x20 (2026-11-22)
+    // 13-18 free
     kSlotRects = 19,
     kSlotItems = 20,
     kSlotItemText = 21,
@@ -38,7 +38,7 @@ struct Row {
 };
 
 // Rows and their choices; square 0 is the leftmost.
-constexpr s32 kRows = 7;
+constexpr s32 kRows = 8;
 constexpr Row kRowTable[kRows] = {
     {"FULLSCREEN", 2, {"ON", "OFF"}},
     {"V-SYNC", 2, {"ON", "OFF"}},
@@ -47,7 +47,14 @@ constexpr Row kRowTable[kRows] = {
     {"INTERNAL RES.", 8, {"1X", "2X", "3X", "4X", "5X", "6X", "7X", "8X"}},
     {"SCALING FILTER", 2, {"SHARP", "SMOOTH"}},
     {"ANTI-ALIASING", 3, {"OFF", "FXAA", "SMAA"}},
+    {"TEXT", 2, {"ORIGINAL", "SHARP"}},  // presentation.text_filter (proposed 2026-11-22, issue #4)
 };
+
+// Name and value of row r in its slot (each string under 0x20 bytes).
+u32 RowName(s32 r) { return port_menu::String(kSlotRows + static_cast<u32>(r), kRowTable[r].name); }
+u32 RowValue(s32 r, const char* value) {
+    return port_menu::StringAt(kSlotRows + static_cast<u32>(r), 0x20, value);
+}
 constexpr s32 kFrameCaps[5] = {60, 120, 144, 240, 360};
 
 // Layout (12.4 screen units): title row as BRIGHTNESS, then one row per setting.
@@ -90,7 +97,8 @@ s32 Choice(const port::GraphicsOptions& g, s32 row) {
             return 4;
         case 4: return g.internal_scale < 1 ? 0 : (g.internal_scale > 8 ? 7 : g.internal_scale - 1);
         case 5: return g.smooth_filter ? 1 : 0;
-        default: return g.antialiasing < 0 ? 0 : (g.antialiasing > 2 ? 2 : g.antialiasing);
+        case 6: return g.antialiasing < 0 ? 0 : (g.antialiasing > 2 ? 2 : g.antialiasing);
+        default: return g.sharp_text ? 1 : 0;
     }
 }
 
@@ -102,7 +110,8 @@ void SetChoice(port::GraphicsOptions& g, s32 row, s32 c) {
         case 3: g.frame_cap = kFrameCaps[c]; break;
         case 4: g.internal_scale = c + 1; break;
         case 5: g.smooth_filter = c == 1; break;
-        default: g.antialiasing = c; break;
+        case 6: g.antialiasing = c; break;
+        default: g.sharp_text = c == 1; break;
     }
 }
 
@@ -123,8 +132,14 @@ void MoveCursor(u32 obj) {
 u32 PanelRects() {
     u32 w[12];
     for (u32 i = 0; i < 8; ++i) w[i] = GRef<u32>(0x003AF3D0 + i * 4);
-    w[8] = (0x7200u + 0x0BA0u) << 16 | (0x6C00u + 0x1140u);  // centre (276, 186)
-    w[9] = 0x0DE0u << 16 | 0x1E80u;                             // 488 x 222 (seven rows)
+    // The inner outline (centre (319.5, 197.5), 495 x 201) ends below the seventh row: one row
+    // taller and half a row lower, so it still encloses every row with TEXT (2026-11-22).
+    w[4] += 0x00E0u << 16;
+    w[5] += 0x01C0u << 16;
+    // One row (28 pixels) taller per row, centre moved down by half a row: 488 x 222 at (276, 186)
+    // for seven rows, 488 x 250 at (276, 200) for eight (TEXT, 2026-11-22).
+    w[8] = (0x7200u + 0x0C80u) << 16 | (0x6C00u + 0x1140u);  // centre (276, 200)
+    w[9] = 0x0FA0u << 16 | 0x1E80u;                             // 488 x 250 (eight rows)
     w[10] = 0x00D1C1A9u;
     w[11] = 0x3DCCCCCDu;  // 0.1
     return port_menu::Words(kSlotRects, w, 12);
@@ -256,9 +271,9 @@ void DrawGraphicsTexts(u32 list, s32 index, u32 obj) {
         for (s32 r = 0; r < kRows; ++r) {
             const f32 tr = fpu::Sub(t, static_cast<f32>(4 + r * 4));
             const s32 y = RowY(r);
-            DrawMenuText(tr, kNameX, y + kNameDy, 4, port_menu::String(kSlotNames + static_cast<u32>(r), kRowTable[r].name));
+            DrawMenuText(tr, kNameX, y + kNameDy, 4, RowName(r));
             const char* value = RowEnabled(g_Edit, r) ? kRowTable[r].values[Choice(g_Edit, r)] : "V-SYNC";
-            DrawMenuText(fpu::Sub(tr, 8.0f), kValueX, y, 3, port_menu::String(kSlotValues + static_cast<u32>(r), value));
+            DrawMenuText(fpu::Sub(tr, 8.0f), kValueX, y, 3, RowValue(r, value));
         }
         if (a < 0.0f) {
             GRef<u16>(obj + 0x27C) |= 0x8000;

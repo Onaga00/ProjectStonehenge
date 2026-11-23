@@ -90,6 +90,7 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
     if (!gs_ready_) AC04_LOG_ERROR("renderer", "GS renderer unavailable: %s", gs_error.c_str());
     gs_backend_.SetScale(internal_scale_);
     gs_backend_.SetAntiAlias(ToBackend(presentation.antialiasing));
+    gs_backend_.SetSharpText(presentation.text_filter == platform::TextFilter::Sharp);
     gs_state_.SetFrameQuery([this](uint32_t tbp) { return gs_backend_.IsFrameBuffer(tbp); });
     gs_state_.SetTextureDecode(gs::TextureDecode::kGpu);  // docs/port/renderer.md §2; SetTextureDecode changes it
     // Movie upscaling stage (ADR-006 §5); without it movies are drawn from the GS upload only.
@@ -530,6 +531,7 @@ void Renderer::SetDisplayAspect(int w, int h) {
 void Renderer::ApplySettings(const platform::PresentationSettings& presentation) {
     const bool vsync_changed = presentation.vsync != presentation_.vsync;
     gs_backend_.SetAntiAlias(ToBackend(presentation.antialiasing));
+    gs_backend_.SetSharpText(presentation.text_filter == platform::TextFilter::Sharp);
     presentation_ = presentation;
     if (vsync_changed) swapchain_dirty_ = true;
     const int scale = std::clamp(presentation.internal_scale, 1, platform::kMaxInternalScale);

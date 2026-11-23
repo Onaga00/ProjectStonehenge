@@ -138,6 +138,10 @@ public:
     // the GS alpha in the frame buffer is kept.
     enum class AntiAlias { kOff, kFxaa, kSmaa };
     void SetAntiAlias(AntiAlias mode) { aa_mode_ = mode; }
+    // Sharp text (presentation.text_filter, port-features.md §2): at a scale above 1, sprites whose
+    // texture is a glyph coverage mask (CoverageMaskAlpha) are sampled at the host pixel with
+    // their alpha edge sharpened (gs.frag flag 30), not on the native pixel grid (flag 26).
+    void SetSharpText(bool on) { sharp_text_ = on; }
     // GPU time per section (gpu_profiler.h): Record marks the end of each section it records.
     void SetProfiler(GpuProfiler* p) { profiler_ = p; }
 
@@ -372,6 +376,7 @@ private:
     std::set<std::uint32_t> native_fbps_;
     // Anti-aliasing state (gs_antialias.cpp).
     AntiAlias aa_mode_ = AntiAlias::kOff;
+    bool sharp_text_ = false;
     bool aa_ready_ = false;
     Image aa_color_, aa_edges_, aa_weights_, aa_out_, aa_area_, aa_search_;
     VkRenderPass aa_pass_rg_ = VK_NULL_HANDLE, aa_pass_rgba_ = VK_NULL_HANDLE;

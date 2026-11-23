@@ -21,11 +21,13 @@ struct GraphicsOptions {
     bool smooth_filter = false;
     s32 antialiasing = 0;     // 0 off, 1 FXAA, 2 SMAA
     bool frame_interpolation = true;
+    bool sharp_text = true;   // presentation.text_filter "sharp"
 
     bool operator==(const GraphicsOptions& o) const {
         return fullscreen == o.fullscreen && vsync == o.vsync && frame_cap == o.frame_cap &&
                internal_scale == o.internal_scale && smooth_filter == o.smooth_filter &&
-               antialiasing == o.antialiasing && frame_interpolation == o.frame_interpolation;
+               antialiasing == o.antialiasing && frame_interpolation == o.frame_interpolation &&
+               sharp_text == o.sharp_text;
     }
     bool operator!=(const GraphicsOptions& o) const { return !(*this == o); }
 };

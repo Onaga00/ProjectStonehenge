@@ -33,6 +33,8 @@ constexpr EnumName<ScreenRatioDefault> kScreenRatios[] = {{ScreenRatioDefault::M
 constexpr EnumName<AntiAliasing> kAntiAliasing[] = {{AntiAliasing::Off, "off"},
                                                    {AntiAliasing::Fxaa, "fxaa"},
                                                    {AntiAliasing::Smaa, "smaa"}};
+constexpr EnumName<TextFilter> kTextFilters[] = {{TextFilter::Original, "original"},
+                                                 {TextFilter::Sharp, "sharp"}};
 
 DisplayInfo g_DefaultsDisplay;
 bool g_ValidationDefaults = false;
@@ -132,6 +134,7 @@ const char* ToString(WindowMode v) { return NameOf(kWindowModes, v); }
 const char* ToString(FocusLossAudio v) { return NameOf(kFocusLoss, v); }
 const char* ToString(ScreenRatioDefault v) { return NameOf(kScreenRatios, v); }
 const char* ToString(AntiAliasing v) { return NameOf(kAntiAliasing, v); }
+const char* ToString(TextFilter v) { return NameOf(kTextFilters, v); }
 
 Settings DefaultSettings(const DisplayInfo& display) {
     Settings s;
@@ -150,6 +153,7 @@ Settings DefaultSettings(const DisplayInfo& display) {
         s.presentation.antialiasing = AntiAliasing::Fxaa;
         s.presentation.internal_scale = DefaultInternalScale(display.height);
     }
+    if (g_ValidationDefaults) s.presentation.text_filter = TextFilter::Original;
     return s;
 }
 
@@ -214,7 +218,7 @@ bool SettingsStore::LoadFromText(const std::string& text, std::vector<std::strin
 
     if (const json* p = r.Section("presentation", {"filter", "vsync", "frame_cap", "window_mode", "window_width",
                                                    "window_height", "internal_scale", "default_screen_ratio",
-                                                   "antialiasing", "frame_interpolation"})) {
+                                                   "antialiasing", "frame_interpolation", "text_filter"})) {
         r.Enum(p, "presentation", "filter", kFilters, s.presentation.filter);
         r.Bool(p, "presentation", "vsync", s.presentation.vsync);
         int cap = s.presentation.frame_cap;
@@ -228,6 +232,7 @@ bool SettingsStore::LoadFromText(const std::string& text, std::vector<std::strin
         r.Enum(p, "presentation", "default_screen_ratio", kScreenRatios, s.presentation.default_screen_ratio);
         r.Enum(p, "presentation", "antialiasing", kAntiAliasing, s.presentation.antialiasing);
         r.Bool(p, "presentation", "frame_interpolation", s.presentation.frame_interpolation);
+        r.Enum(p, "presentation", "text_filter", kTextFilters, s.presentation.text_filter);
     }
     if (const json* p = r.Section("paths", {"iso"})) {
         r.String(p, "paths", "iso", s.paths.iso);
@@ -278,6 +283,7 @@ std::string SettingsStore::ToText() const {
     p["default_screen_ratio"] = ToString(s.presentation.default_screen_ratio);
     p["antialiasing"] = ToString(s.presentation.antialiasing);
     p["frame_interpolation"] = s.presentation.frame_interpolation;
+    p["text_filter"] = ToString(s.presentation.text_filter);
     root["paths"]["iso"] = s.paths.iso;
     root["audio"]["on_focus_loss"] = ToString(s.audio.on_focus_loss);
     auto& in = root["input"];
@@ -332,7 +338,7 @@ void SettingsStore::Replace(const Settings& next) {
         a.window_mode != b.window_mode || a.window_width != b.window_width ||
         a.window_height != b.window_height || a.internal_scale != b.internal_scale ||
         a.default_screen_ratio != b.default_screen_ratio || a.antialiasing != b.antialiasing ||
-        a.frame_interpolation != b.frame_interpolation)
+        a.frame_interpolation != b.frame_interpolation || a.text_filter != b.text_filter)
         Notify(SettingsSection::Presentation);
     if (prev.paths.iso != next.paths.iso) Notify(SettingsSection::Paths);
     if (prev.audio.on_focus_loss != next.audio.on_focus_loss) Notify(SettingsSection::Audio);

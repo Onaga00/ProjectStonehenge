@@ -370,6 +370,7 @@ port::GraphicsOptions ToGraphicsOptions(const PresentationSettings& p) {
     g.smooth_filter = p.filter == ScaleFilter::Smooth;
     g.antialiasing = static_cast<s32>(p.antialiasing);
     g.frame_interpolation = p.frame_interpolation;
+    g.sharp_text = p.text_filter == TextFilter::Sharp;
     return g;
 }
 
@@ -381,6 +382,7 @@ void ApplyGraphicsOptions(const port::GraphicsOptions& g, PresentationSettings& 
     p.filter = g.smooth_filter ? ScaleFilter::Smooth : ScaleFilter::Sharp;
     if (g.antialiasing >= 0 && g.antialiasing <= 2) p.antialiasing = static_cast<AntiAliasing>(g.antialiasing);
     p.frame_interpolation = g.frame_interpolation;
+    p.text_filter = g.sharp_text ? TextFilter::Sharp : TextFilter::Original;
 }
 
 // Reloads settings.json when it changes on disk, so values can be edited while the port runs.
@@ -669,11 +671,11 @@ int Run(int argc, char** argv) {
         else renderer.ApplySettings(s.presentation);
         window.ApplyMode(s.presentation);
         pacer.SetCap(EffectiveFrameCap(s.presentation));
-        AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d%s, %s, internal scale %d, anti-aliasing %s, frame interpolation %s",
+        AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d%s, %s, internal scale %d, anti-aliasing %s, frame interpolation %s, text %s",
                       ToString(s.presentation.filter), s.presentation.vsync ? "on" : "off", s.presentation.frame_cap,
                       s.presentation.vsync ? " (not used)" : "", ToString(s.presentation.window_mode),
                       s.presentation.internal_scale, ToString(s.presentation.antialiasing),
-                      s.presentation.frame_interpolation ? "on" : "off");
+                      s.presentation.frame_interpolation ? "on" : "off", ToString(s.presentation.text_filter));
     });
     settings.Subscribe(SettingsSection::Audio, [&](const Settings& s) { audio.ApplySettings(s.audio); });
     settings.Subscribe(SettingsSection::Input, [&](const Settings& s) { input.ApplySettings(s.input); });

@@ -36,7 +36,9 @@ Interpolation is feasible with the node matrices and the camera recorded per ste
 
 ## Pending (User's decision)
 
-None.
+| Feature | Details | Related | Status |
+|---|---|---|---|
+| Sharp text | `presentation.text_filter` `original` / `sharp`: at an internal scale above 1, glyph sprites (4-bit textures whose palette is a coverage mask) are sampled at the host resolution with their alpha edge sharpened, not on the native pixel grid; all other 2D art unchanged; 1× unchanged; guest RAM unchanged | `../port/port-features.md` §2, `../port/renderer.md` §1.7 | proposed 2026-11-22 for issue #4 ("Smoothing the captions/HUD"), with a GRAPHICS page row TEXT ORIGINAL / SHARP and the default `sharp`; waits for the User's decision |
 
 ## Later
 

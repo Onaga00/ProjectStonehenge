@@ -40,6 +40,7 @@ layout(push_constant) uniform Params {
     int scale;       // internal scale of the target: host pixels per GS pixel
     int tex_scale;   // host texels per GS texel of the frame-buffer copy (flag 16)
     int alpha;       // ALPHA bits 0-7: A, B, C, D (flag 28)
+    int text_alpha;  // full-coverage alpha of a glyph palette (flag 30)
 } pc;
 
 int Wrap(int c, int mode, int size, int mn, int mx) {
@@ -114,6 +115,7 @@ void main() {
     // floor(g + 1/2), g = the host pixel's GS position), so its texels map 1:1 to native pixels as
     // on the PS2. Derivatives first (uniform control flow).
     vec2 tex_xy = v_tex.xy;
+    vec2 uv_dx = dFdx(v_tex.xy), uv_dy = dFdy(v_tex.xy);  // texels per host pixel (flag 30, FST sprites)
     if ((pc.flags & (1 << 26)) != 0) {
         vec2 g = gl_FragCoord.xy / float(pc.scale) - 0.5;
         vec2 dg = (floor(g + 0.5) - g) * float(pc.scale);
@@ -132,7 +134,9 @@ void main() {
         // The GS addresses texels in fixed point with 4 fractional bits. Rounding to that grid
         // removes float interpolation error: a 1:1 sprite gives exact integers at pixel positions,
         // and 0.9999 would pick the texel on the left (seams every 16 pixels in movies).
-        uv = floor(uv * 16.0 + 0.5) / 16.0;
+        // Flag 30 (sharp text, port-features.md §2) samples at the host pixel's own position.
+        bool sharp_text = (pc.flags & (1 << 30)) != 0;
+        if (!sharp_text) uv = floor(uv * 16.0 + 0.5) / 16.0;
         // Filter choice (TEX1): LOD = K with LCM = 1, else log2(1/|Q|) * 2^L + K. LOD <= 0 magnifies
         // (MMAG); above, MMIN: 0 nearest, 1 linear, 2/4 nearest/linear in the nearest mip level
         // (LOD rounded), 3/5 nearest/linear in the two nearest levels, blended (trilinear). LOD is
@@ -144,7 +148,30 @@ void main() {
         float lod = ((pc.tex1 >> 6) & 1) != 0 ? k : log2(1.0 / max(q, 1e-30)) * float(1 << ((pc.tex1 >> 7) & 3)) + k;
         bool min_linear = mmin == 1 || mmin == 4 || mmin == 5;
         vec4 t;
-        if ((pc.flags & (1 << 27)) != 0) {
+        if (sharp_text) {
+            // Flag 30: a glyph sprite at internal scale > 1 (gs_vulkan.cpp CoverageMaskAlpha). The
+            // glyph's coverage is in the palette's alpha alone, so: bilinear at full precision
+            // (alpha-weighted colour, no dark fringe), then the alpha edge is drawn as a step at
+            // half coverage, anti-aliased over about one host pixel (fwidth), the way distance-
+            // field fonts are drawn. Presentation only; flag 26 is not set for these draws.
+            vec2 b = uv - 0.5;
+            ivec2 i = ivec2(floor(b));
+            vec2 f = fract(b);
+            vec4 t00 = Fetch(i, 0), t10 = Fetch(i + ivec2(1, 0), 0);
+            vec4 t01 = Fetch(i + ivec2(0, 1), 0), t11 = Fetch(i + ivec2(1, 1), 0);
+            float a = mix(mix(t00.a, t10.a, f.x), mix(t01.a, t11.a, f.x), f.y);
+            vec3 pm = mix(mix(t00.rgb * t00.a, t10.rgb * t10.a, f.x), mix(t01.rgb * t01.a, t11.rgb * t11.a, f.x), f.y);
+            vec3 rgb = a > 0.0 ? pm / a : t00.rgb;
+            // Change of alpha per host pixel, from the bilinear slope and the texels per host pixel
+            // (derivatives taken before any discard): fwidth(a) without derivatives of a.
+            vec2 da = vec2(mix(t10.a - t00.a, t11.a - t01.a, f.y), mix(t01.a - t00.a, t11.a - t10.a, f.x));
+            float w = abs(dot(da, uv_dx)) + abs(dot(da, uv_dy));
+            float full = float(pc.text_alpha);
+            float edge = clamp((a - 0.5 * full) / max(w, 1e-3) + 0.5, 0.0, 1.0);
+            // Only the edge is sharpened: inside the stroke the font's own (bilinear) alpha is kept,
+            // so the text keeps the game's brightness and shadow weight.
+            t = floor(vec4(rgb, edge * max(a, 0.5 * full)) + 0.5);
+        } else if ((pc.flags & (1 << 27)) != 0) {
             // Movie column (ADR-006 §5): rect.xy = picture pixel of texel (0, 0), rect.zw = picture
             // size; the upscaled picture is sampled bilinearly at that position.
             t = floor(texture(movie, (vec2(pc.rect.xy) + uv) / vec2(pc.rect.zw)) * 255.0 + 0.5);

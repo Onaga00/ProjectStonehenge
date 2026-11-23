@@ -25,6 +25,7 @@ TEST_CASE("settings: defaults") {
     CHECK_FALSE(s.debug.fps_overlay);
     CHECK(s.presentation.antialiasing == AntiAliasing::Fxaa);
     CHECK(s.presentation.frame_interpolation);
+    CHECK(s.presentation.text_filter == TextFilter::Sharp);
     CHECK(s.audio.on_focus_loss == FocusLossAudio::KeepPlaying);
     CHECK(s.debug.overlay_toggle == "\\");
     CHECK(s.input.modern_controls[0]);
@@ -108,6 +109,22 @@ TEST_CASE("settings: frame interpolation") {
     store.Replace(next);
     CHECK(notified == 1);  // a change notifies the presentation section
     CHECK_FALSE(store.LoadFromText(R"({"presentation":{"frame_interpolation":"yes"}})", warnings));
+}
+
+TEST_CASE("settings: text filter") {
+    SettingsStore store;
+    std::vector<std::string> warnings;
+    int notified = 0;
+    store.Subscribe(SettingsSection::Presentation, [&notified](const Settings&) { ++notified; });
+    CHECK(store.LoadFromText(R"({"presentation":{"text_filter":"original"}})", warnings));
+    CHECK(store.Get().presentation.text_filter == TextFilter::Original);
+    CHECK(nlohmann::json::parse(store.ToText())["presentation"]["text_filter"] == "original");
+    Settings next = store.Get();
+    next.presentation.text_filter = TextFilter::Sharp;
+    store.Replace(next);
+    CHECK(notified == 1);  // a change notifies the presentation section
+    CHECK(nlohmann::json::parse(store.ToText())["presentation"]["text_filter"] == "sharp");
+    CHECK_FALSE(store.LoadFromText(R"({"presentation":{"text_filter":"blurry"}})", warnings));
 }
 
 TEST_CASE("settings: valid values are read") {

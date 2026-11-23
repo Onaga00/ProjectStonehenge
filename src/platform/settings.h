@@ -26,6 +26,10 @@ enum class FocusLossAudio { KeepPlaying, Mute };
 enum class ScreenRatioDefault { Monitor, Game };
 // Anti-aliasing of the flight views' 3D before their HUD is drawn (presentation only).
 enum class AntiAliasing { Off, Fxaa, Smaa };
+// Text at an internal scale above 1 (presentation only): the game's own look (glyphs sampled on the
+// native pixel grid, as on the PS2) or glyph edges sharpened at the host resolution
+// (docs/port/port-features.md §2 "Sharp text").
+enum class TextFilter { Original, Sharp };
 
 // The display the port starts on (0 = unknown): the defaults depend on it.
 struct DisplayInfo {
@@ -47,6 +51,7 @@ struct PresentationSettings {
     // Frame interpolation (ADR-002): above 60 presented frames per second the 3D is shown between
     // the last two game steps (platform/render/frame_interpolator.h). Presentation only.
     bool frame_interpolation = true;
+    TextFilter text_filter = TextFilter::Sharp;
 };
 
 struct PathSettings {
@@ -161,5 +166,6 @@ const char* ToString(WindowMode v);
 const char* ToString(FocusLossAudio v);
 const char* ToString(ScreenRatioDefault v);
 const char* ToString(AntiAliasing v);
+const char* ToString(TextFilter v);
 
 }  // namespace ac04::platform

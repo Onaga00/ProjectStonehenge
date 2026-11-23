@@ -652,6 +652,11 @@ void DebugOverlay::DrawGraphics(const OverlayFrameData& data) {
     combo("Anti-aliasing", aa, kAa, 3);
     p.antialiasing = static_cast<AntiAliasing>(aa);
 
+    int text = p.text_filter == TextFilter::Sharp ? 1 : 0;
+    const char* const kText[] = {"Original", "Sharp"};
+    combo("Text (internal res. > 1x)", text, kText, 2);
+    p.text_filter = text == 1 ? TextFilter::Sharp : TextFilter::Original;
+
     ImGui::Separator();
     bool save = false;
     if (ImGui::Button("Defaults for this display")) {
@@ -664,6 +669,7 @@ void DebugOverlay::DrawGraphics(const OverlayFrameData& data) {
         p.internal_scale = d.internal_scale;
         p.filter = d.filter;
         p.antialiasing = d.antialiasing;
+        p.text_filter = d.text_filter;
         changed = true;
     }
     ImGui::SameLine();
