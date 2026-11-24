@@ -89,10 +89,32 @@ struct Params {
     std::int32_t scale;      // host pixels per GS pixel of the target drawn into
     std::int32_t tex_scale;  // host texels per GS texel of the frame-buffer copy sampled (flag 16)
     std::int32_t alpha;      // ALPHA bits 0-7 (A, B, C, D) for the blend done in the shader (flag 28)
+    std::int32_t text_alpha; // flag 30: the glyph palette's full-coverage alpha (CoverageMaskAlpha)
+    std::int32_t pad1[3];
 };
-static_assert(sizeof(Params) == 96, "push constant layout");
+static_assert(sizeof(Params) == 112, "push constant layout");
 
 std::uint64_t Bits(std::uint64_t v, int lo, int n) { return (v >> lo) & ((1ull << n) - 1); }
+
+// Sharp text (port-features.md §2): a 4-bit texture whose palette is a glyph coverage mask, as the
+// game's fonts are (message font GIM in .data at 0x003B0A80: entry 0 transparent, then one colour,
+// 0x80 grey, with alpha rising 0x00, 0x0A, 0x11, ... to full coverage). Returns that full-coverage
+// alpha, or 0 when the texture is anything else (inline icons, which have their own palettes, and
+// all other art keep the native-grid sampling of flag 26). Presentation only.
+int CoverageMaskAlpha(const DecodedTexture& t) {
+    if (t.psm != kPsmT4 && t.psm != kPsmT4HL && t.psm != kPsmT4HH) return 0;
+    if (!t.palette) return 0;
+    const auto& pal = *t.palette;
+    if ((pal[0] >> 24) != 0) return 0;
+    const std::uint32_t rgb = pal[1] & 0xFFFFFF;
+    std::uint32_t prev = 0;
+    for (int i = 1; i < 16; ++i) {
+        const std::uint32_t a = pal[i] >> 24;
+        if ((pal[i] & 0xFFFFFF) != rgb || a < prev) return 0;
+        prev = a;
+    }
+    return prev >= 0x40 ? static_cast<int>(prev) : 0;
+}
 
 // Blend state for the GS equation (A - B) * C + D, A/B/D in {Cs, Cd, 0}, C in {As, Ad, FIX}.
 struct BlendState {
@@ -2532,10 +2554,20 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, con
                     p.rect[2] = movie_.width;
                     p.rect[3] = movie_.height;
                 } else if (ts > 1 && d.kind == PrimKind::kSprite) {
-                    // 2D sprites sample at the UV of the native pixel each host pixel lies in, so
-                    // texel-exact HUD, text and atlas art keep their native look without seams
-                    // between atlas cells (renderer.md Â§1.4 fix 1).
-                    flags |= 1 << 26;
+                    const int text_alpha = sharp_text_ && d.fst && !frame_clut_ready ? CoverageMaskAlpha(*d.texture) : 0;
+                    if (text_alpha > 0) {
+                        // Glyphs (sharp text, port-features.md §2): sampled at the host pixel with
+                        // the alpha edge sharpened, so the 32x32 glyph cells show their detail at
+                        // the internal resolution. The game insets glyph UVs by half a texel, so
+                        // the bilinear footprint stays inside the cell.
+                        flags |= 1 << 30;
+                        p.text_alpha = text_alpha;
+                    } else {
+                        // 2D sprites sample at the UV of the native pixel each host pixel lies in, so
+                        // texel-exact HUD, text and atlas art keep their native look without seams
+                        // between atlas cells (renderer.md Â§1.4 fix 1).
+                        flags |= 1 << 26;
+                    }
                 }
             } else {
                 continue;

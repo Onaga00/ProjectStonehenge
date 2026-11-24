@@ -90,6 +90,8 @@ Setting `presentation.internal_scale` 1–8 (default 1; `--internal-scale <n>` f
 | presentation | the field copy's source is copied at its scale; the native image is the presented size × N; the output pass and its filters are unchanged |
 | fix 9 sprite edges (2026-10-20) | at N > 1 every sprite's edges move to the borders of the native pixels the GS covers (pixel *x* is drawn when x0 ≤ *x* < x1, so the edges become ceil(x0) − ½ and ceil(x1) − ½), the texture coordinates moved along. Without it, sprites that meet between two native sample points left host pixels uncovered: the glow pass's 32-pixel upsampling strips (one ends at 31.5, the next starts at 32.0) drew dark vertical lines every 32 pixels over the mission 1 opening and flight at 2× and above (`validation.md` §2m, ST-5). 1× is unchanged (`gs_vulkan.cpp`, sprite expansion) |
 
+Exception to fix 1 (2026-11-22, `presentation.text_filter` = `sharp`): glyph sprites (a T4 texture whose palette is a coverage mask, `CoverageMaskAlpha`) are not rounded to the native grid but sampled at the host pixel with full-precision bilinear and a half-coverage alpha step (gs.frag flag 30); `port-features.md` §2 "Sharp text".
+
 Not done: per-chain scaling of the 1× targets, AA1 edge coverage (as at 1×). Results: `validation.md` IR-1 to IR-3, §2m.
 
 ### 1.8 Anti-aliasing and anisotropic filtering: feasibility (User question 2026-10-20)
