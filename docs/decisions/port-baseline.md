@@ -31,14 +31,14 @@ This file lists category 2. A feature is added here only after the User approves
 | Audio on focus loss | setting `audio.on_focus_loss`: `keep_playing` (default) or `mute`; never pauses the simulation | ADR-005 | 2026-10-11 |
 | Higher internal rendering resolution | factor 1–8 (`presentation.internal_scale`, default the closest to the display since 2026-10-22, before 1; `--internal-scale`); frame-sized buffers render at N×, the small shadow/glow targets stay 1×, 2D sprites keep their native texel grid, movies are drawn from the upscaling stage at N > 1; the output pass scales from N × the native size. Guest RAM identical at every factor (`../port/validation.md` IR-1) | `../port/renderer.md` §1, ADR-006 | 2026-10-19 (User request: test up to 8×) |
 | Movie upscaling | decoded movie pictures (640×448; 640×336 for SS01–SS12) pass a separate, replaceable upscaling stage before the output pass, scaled by the internal-resolution factor (passthrough at 1× until higher internal resolutions are enabled); AMD FidelityFX FSR 1 EASU, plus RCAS sharpening if it improves the result; each picture is still held for exactly 2 game ticks; game code and guest RAM unchanged | ADR-006 §5 | 2026-10-13 |
+| Sharp text | `presentation.text_filter` `original` / `sharp` (default `sharp`; `original` in validation runs), GRAPHICS row TEXT ORIGINAL / SHARP: at an internal scale above 1, glyph sprites (4-bit textures whose palette is a coverage mask) are sampled at the host resolution with their alpha edge sharpened, not on the native pixel grid; all other 2D art unchanged; 1× unchanged; guest RAM identical to `main` at every scale 1–8 (full regression suite, 2026-11-24) | `../port/port-features.md` §2, `../port/renderer.md` §1.7 | 2026-11-24 (User, for issue #4; proposed 2026-11-22) |
+| Ultrawide flight presentation | `presentation.ultrawide` (default on) and `presentation.ultrawide_4x3_fov` (default on), GRAPHICS row ULTRAWIDE OFF / 4:3 FOV / 16:9 FOV: in flight, with the game's SCREEN RATIO at 16:9 and a window more than 1 % wider than 16:9, the picture fills the window (Hor+: the flight, replay and in-engine sequence cameras get a wider projection; the HUD keeps its 16:9 shape, world-anchored markers stay on their objects). Menus, movies, 4:3 mode and 16:9 windows are unchanged; off in validation runs. **Open check:** with the feature on, no run has yet compared the simulation with the feature off (whether any gameplay rule uses the camera projection, e.g. lock-on or culling) | ADR-006 "Ultrawide flight presentation", `../port/port-features.md` §2 | 2026-11-24 (User: "approve ultrawide as baseline"; for issue #12) |
 
 Interpolation is feasible with the node matrices and the camera recorded per step (ADR-002 research findings). Effects and particles use their pool slot as identity and must snap when a slot is reused.
 
 ## Pending (User's decision)
 
-| Feature | Details | Related | Status |
-|---|---|---|---|
-| Sharp text | `presentation.text_filter` `original` / `sharp`: at an internal scale above 1, glyph sprites (4-bit textures whose palette is a coverage mask) are sampled at the host resolution with their alpha edge sharpened, not on the native pixel grid; all other 2D art unchanged; 1× unchanged; guest RAM unchanged | `../port/port-features.md` §2, `../port/renderer.md` §1.7 | proposed 2026-11-22 for issue #4 ("Smoothing the captions/HUD"), with a GRAPHICS page row TEXT ORIGINAL / SHARP and the default `sharp`; waits for the User's decision |
+None.
 
 ## Later
 
@@ -51,7 +51,6 @@ Interpolation is feasible with the node matrices and the camera recorded per ste
 
 | Feature | Why not baseline |
 |---|---|
-| Widescreen (Hor+) | changes the projection and HUD layout, possibly culling and what the player sees. Not checked yet: whether any gameplay rule uses on-screen visibility (e.g. lock-on through the camera projection). Draw-phase randomness (sky, sun jitter) must run identically either way |
 | Effects detail / "reduce effects" | effects read the random table inside the simulation step, so changing them changes gameplay randomness; must be labelled gameplay-altering (`../subsystems/effects.md`) |
 | VS LAN play (ADR-008, option A, approved 2026-10-13) | not intrinsic to a PC port and adds input delay; lockstep input sharing over UDP on the local network, opt-in per session, original local split screen unchanged as the default; optional crop to the local player's view |
 | Debug overlay and its tools | optional debug layer (`../port/port-features.md` §8); opens only when `debug.overlay_enabled` is true (default off; on by default in development builds); nothing changes unless it is opened |

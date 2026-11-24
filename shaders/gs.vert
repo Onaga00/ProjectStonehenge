@@ -14,12 +14,20 @@ layout(location = 2) out float v_fog;
 
 layout(push_constant) uniform Params {
     vec2 target_size;
+    float overlay_center;
+    float overlay_scale;
 } pc;
 
 void main() {
+    // Ultrawide: only draws after a flight view's 3D/HUD boundary are narrowed about its centre.
+    // The depth-copy pipeline puts an integer bit pattern here (a subnormal float); the lower bound
+    // rejects it. Ordinary non-ultrawide draws use zero, also the identity.
+    vec2 pos = in_pos.xy;
+    if (pc.overlay_scale > 0.01 && pc.overlay_scale < 1.0)
+        pos.x = pc.overlay_center + (pos.x - pc.overlay_center) * pc.overlay_scale;
     // GS pixel (x, y) is sampled at its integer coordinate; Vulkan samples pixel centres, so
     // positions are moved by half a pixel.
-    vec2 p = (in_pos.xy + 0.5) / pc.target_size * 2.0 - 1.0;
+    vec2 p = (pos + 0.5) / pc.target_size * 2.0 - 1.0;
     gl_Position = vec4(p, in_pos.z, 1.0);
     v_color = vec4(in_color);
     v_tex = in_tex;

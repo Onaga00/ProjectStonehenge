@@ -14,6 +14,8 @@ add_executable(ac04_tests
     test_input.cpp
     test_iso9660.cpp
     test_output_layout.cpp
+    test_ultrawide.cpp
+    test_port_menu.cpp
     test_pipeline_cache.cpp
     test_settings.cpp
     test_sha1.cpp

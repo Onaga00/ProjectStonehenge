@@ -1,6 +1,6 @@
 // Placement of the game image in the window (ADR-006): the native image is shown at the original
-// display aspect (4:3, or 16:9 when the game's SCREEN RATIO option is on), centred, with black
-// bars (pillarbox on wide windows, letterbox on tall ones).
+// display aspect (4:3, 16:9 when the game's SCREEN RATIO option is on, or the actual window aspect
+// during ultrawide flight), centred, with black bars when the aspects differ.
 #pragma once
 
 namespace ac04::render {

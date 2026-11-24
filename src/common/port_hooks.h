@@ -22,12 +22,15 @@ struct GraphicsOptions {
     s32 antialiasing = 0;     // 0 off, 1 FXAA, 2 SMAA
     bool frame_interpolation = true;
     bool sharp_text = true;   // presentation.text_filter "sharp"
+    bool ultrawide = true;           // presentation.ultrawide
+    bool ultrawide_4x3_fov = true;   // presentation.ultrawide_4x3_fov
 
     bool operator==(const GraphicsOptions& o) const {
         return fullscreen == o.fullscreen && vsync == o.vsync && frame_cap == o.frame_cap &&
                internal_scale == o.internal_scale && smooth_filter == o.smooth_filter &&
                antialiasing == o.antialiasing && frame_interpolation == o.frame_interpolation &&
-               sharp_text == o.sharp_text;
+               sharp_text == o.sharp_text && ultrawide == o.ultrawide &&
+               ultrawide_4x3_fov == o.ultrawide_4x3_fov;
     }
     bool operator!=(const GraphicsOptions& o) const { return !(*this == o); }
 };
@@ -76,6 +79,51 @@ struct InputHooks {
 };
 
 InputHooks& Input();
+
+// Presentation shape copied by the host before each game tick. Ultrawide is active only in flight
+// with the game's 16:9 option on; frontend menus and movies keep their original 4:3 / 16:9 presentation.
+struct DisplayOptions {
+    int aspect_w = 4, aspect_h = 3;
+    float projection_x_scale = 1.0f;  // extra horizontal world view, relative to 16:9
+    float hud_x_scale = 1.0f;         // inverse, keeping the 2D overlay's 16:9 shape
+    // Ultrawide is in effect this tick (projection_x_scale > 1), and its field-of-view basis.
+    bool ultrawide = false;
+    // true (presentation.ultrawide_4x3_fov): the flight, replay and in-engine sequence cameras keep
+    // the 4:3 mode's vertical field of view and its camera distances, and only gain width (Hor+
+    // relative to 4:3, like the PCSX2 0x0010C9F4 patch). false: Kimi's original behaviour, Hor+
+    // relative to the game's own 16:9 mode (16:9 camera distances and the 640 x 360 sequence view).
+    bool keep_4x3_fov = true;
+    float window_aspect = 0.0f;  // window width / height while `ultrawide`
+};
+
+DisplayOptions& Display();
+
+// `wide` is the game's SCREEN RATIO flag. `ultrawide` also includes the flight-scene and setting
+// checks. At more than 1 % wider than 16:9 the actual window aspect is used, so 64:27, 43:18 and
+// other ultrawide sizes all fill the window without stretching the world or HUD.
+void SetDisplayOptions(bool wide, bool ultrawide, int window_width, int window_height,
+                       bool keep_4x3_fov = true);
+
+// Projection width for a flight camera whose original widths are `width_4x3` (SCREEN RATIO 4:3)
+// and `width_16x9` (16:9) at the same projection height. Not ultrawide: `width_16x9` (the caller
+// only asks in 16:9 mode). Ultrawide with keep_4x3_fov: width_4x3 x window_aspect / (4/3), so the
+// vertical field of view is the 4:3 one whatever the 16:9 constant is. Otherwise Kimi's
+// width_16x9 x window_aspect / (16/9).
+float UltrawideProjectionWidth(float width_4x3, float width_16x9);
+
+// Ultrawide with keep_4x3_fov: the view cameras use the 4:3 mode's camera distances (zoom) where
+// the game has a separate 16:9 value (external view K 0x0040DAC8 instead of 0x0040DACC; carrier
+// landing / takeoff camera K 0x0040DAC0 instead of 0x0040DAC4).
+bool UltrawideUses4x3Distances();
+
+// Ultrawide: the backend narrows every flight-overlay draw about its view centre by hud_x_scale
+// (gs.vert), which keeps gauges and text at their 16:9 shape but would also pull world-anchored
+// markers (target boxes, lock-on boxes, gun pipper, special-weapon reticle, flight-path marker)
+// toward the centre, away from the objects they mark. The HUD code passes those markers' projected
+// GS X (1/16-pixel units) through this to pre-expand it about `centre` by 1 / hud_x_scale, so after
+// the narrowing they land on their true projected position; their size offsets are added
+// afterwards and are still narrowed, so boxes keep their shape. Identity when not ultrawide.
+s32 UltrawideWorldMarkerX(s32 x, s32 centre);
 
 // Where each flight view's 2D overlay begins in the frame's DMA lists, for the optional
 // anti-aliasing pass (presentation.antialiasing): BuildFlightDrawLists records the first tag of each

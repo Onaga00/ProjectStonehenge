@@ -7,6 +7,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "game/flight_common.h"
 #include "platform/log.h"
 #include "sce/sce.h"
@@ -1098,8 +1099,21 @@ void func_00178DF8(u32 cam, u32 look, f32 fovd, f32 roll) {
     GRef<u32>(v + 0) = 0x80000001;
     const u32 c1 = v + 0x270;
     GRef<u8>(v + 7) = (W(W(0x002A1F70) + 0x4C) & 0x20000000) != 0 ? 0x43 : 0;
-    const f32 height = (Ctx()->flags & 0x10000) != 0 ? 360.0f : 480.0f;
-    SetCameraProjection(640.0f, height, GRef<f32>(0x0040EBC8), 1.0f, GRef<f32>(0x0040EBCC), c0);
+    // Original: 640 x 480, or 640 x 360 in 16:9 (Vert-: the 4:3 width with the top and bottom cut).
+    f32 width = 640.0f;
+    f32 height = (Ctx()->flags & 0x10000) != 0 ? 360.0f : 480.0f;
+    // port: ultrawide flight presents the window aspect, so the in-engine sequence camera must widen
+    // with it or it is stretched. With the 4:3 field of view kept it is 640 x aspect/(4/3) by 480;
+    // otherwise the original 16:9 view widened like the flight cameras.
+    if (port::Display().ultrawide) {
+        if (port::Display().keep_4x3_fov) {
+            width = 640.0f * (port::Display().window_aspect / (4.0f / 3.0f));
+            height = 480.0f;
+        } else {
+            width = 640.0f * port::Display().projection_x_scale;
+        }
+    }
+    SetCameraProjection(width, height, GRef<f32>(0x0040EBC8), 1.0f, GRef<f32>(0x0040EBCC), c0);
     SetCameraViewport(1.0f, GRef<f32>(0x0040EBD0), c0, 0, 0, static_cast<s16>(Ctx()->draw_w),
                       static_cast<s16>(Ctx()->draw_h));
     func_00102838(c1, c0);

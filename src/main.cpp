@@ -371,6 +371,8 @@ port::GraphicsOptions ToGraphicsOptions(const PresentationSettings& p) {
     g.antialiasing = static_cast<s32>(p.antialiasing);
     g.frame_interpolation = p.frame_interpolation;
     g.sharp_text = p.text_filter == TextFilter::Sharp;
+    g.ultrawide = p.ultrawide;
+    g.ultrawide_4x3_fov = p.ultrawide_4x3_fov;
     return g;
 }
 
@@ -383,6 +385,8 @@ void ApplyGraphicsOptions(const port::GraphicsOptions& g, PresentationSettings& 
     if (g.antialiasing >= 0 && g.antialiasing <= 2) p.antialiasing = static_cast<AntiAliasing>(g.antialiasing);
     p.frame_interpolation = g.frame_interpolation;
     p.text_filter = g.sharp_text ? TextFilter::Sharp : TextFilter::Original;
+    p.ultrawide = g.ultrawide;
+    p.ultrawide_4x3_fov = g.ultrawide_4x3_fov;
 }
 
 // Reloads settings.json when it changes on disk, so values can be edited while the port runs.
@@ -1050,6 +1054,7 @@ int Run(int argc, char** argv) {
         for (render::vu1::RunLog& log : job.runs) log.Clear();
         renderer.SetDisplay(job.dispfb, job.display);
         renderer.SetDisplayAspect(job.aspect_w, job.aspect_h);
+        renderer.SetHudXScale(job.hud_x_scale);
         if (job.movie) {
             render::FrameJob::Movie& mp = *job.movie;
             renderer.SubmitMoviePicture(mp.serial, mp.guest_addr, mp.guest_bytes, mp.width, mp.height, mp.rgba);
@@ -1210,6 +1215,17 @@ int Run(int argc, char** argv) {
                 menu.graphics_defaults = ToGraphicsOptions(DefaultSettings(DefaultsDisplay()).presentation);
                 g_feed->modern = menu.modern_controls;
             }
+            {
+                // Flight only: frontend menus and movies keep the original presentation. The actual
+                // window aspect drives both the camera expansion and the output rectangle.
+                int window_w = 0, window_h = 0;
+                window.PixelSize(window_w, window_h);
+                const bool wide = (game::g_MainContext().flags & 0x10000u) != 0;
+                const bool flight = game::g_MainContext().scene == 2;
+                const auto& pr = settings.Get().presentation;
+                port::SetDisplayOptions(wide, flight && pr.ultrawide && !validation_run, window_w, window_h,
+                                        pr.ultrawide_4x3_fov);
+            }
             g_feed->Latch(game.VBlankCount() + 1);
             port::Input().in_flight = {};  // set again by the game while it reads the flight controls
             const auto tick_start = std::chrono::steady_clock::now();
@@ -1271,13 +1287,11 @@ int Run(int argc, char** argv) {
             const bool live = g_feed->Live();
             input.SetVibration(port, live && motors[0] != 0, live ? motors[1] : 0);
         }
-        // Display aspect (ADR-006, original behaviour): 16:9 while the game's SCREEN RATIO option is
-        // on (main context flag 0x10000: the game draws an anamorphic picture), otherwise 4:3.
-        {
-            const bool wide = (game::g_MainContext().flags & 0x10000u) != 0;
-            job.aspect_w = wide ? 16 : 4;
-            job.aspect_h = wide ? 9 : 3;
-        }
+        // Display aspect and HUD compensation selected before the tick (port_hooks.h): original
+        // 4:3 / 16:9, or Hor+ ultrawide during flight on a wider window.
+        job.aspect_w = port::Display().aspect_w;
+        job.aspect_h = port::Display().aspect_h;
+        job.hud_x_scale = port::Display().hud_x_scale;
         {
             // A new picture is copied for the render thread (the decoder keeps its buffer).
             const sce::MoviePicture& mp = sce::Dma().movie_picture;

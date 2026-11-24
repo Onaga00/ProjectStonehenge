@@ -22,8 +22,8 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 // Port menu area slots (port_menu.h; 0-3 are CONTROLLER SETUP's).
 enum Slot : u32 {
     kSlotTitle = 4,
-    kSlotRows = 5,     // 8 rows, one slot each: the name at +0, the value at +0x20 (2026-11-22)
-    // 13-18 free
+    kSlotRows = 5,     // 9 rows, one slot each: the name at +0, the value at +0x20 (2026-11-22)
+    // 14-18 free
     kSlotRects = 19,
     kSlotItems = 20,
     kSlotItemText = 21,
@@ -38,7 +38,7 @@ struct Row {
 };
 
 // Rows and their choices; square 0 is the leftmost.
-constexpr s32 kRows = 8;
+constexpr s32 kRows = 9;
 constexpr Row kRowTable[kRows] = {
     {"FULLSCREEN", 2, {"ON", "OFF"}},
     {"V-SYNC", 2, {"ON", "OFF"}},
@@ -47,8 +47,11 @@ constexpr Row kRowTable[kRows] = {
     {"INTERNAL RES.", 8, {"1X", "2X", "3X", "4X", "5X", "6X", "7X", "8X"}},
     {"SCALING FILTER", 2, {"SHARP", "SMOOTH"}},
     {"ANTI-ALIASING", 3, {"OFF", "FXAA", "SMAA"}},
-    {"TEXT", 2, {"ORIGINAL", "SHARP"}},  // presentation.text_filter (proposed 2026-11-22, issue #4)
+    {"TEXT", 2, {"ORIGINAL", "SHARP"}},  // presentation.text_filter (2026-11-22, issue #4)
+    // presentation.ultrawide / ultrawide_4x3_fov: off, or Hor+ from the 4:3 or the 16:9 view.
+    {"ULTRAWIDE", 3, {"OFF", "4:3 FOV", "16:9 FOV"}},
 };
+static_assert(kSlotRows + kRows <= kSlotRects && kSlotRects < kSlotItems, "GRAPHICS slots overlap");
 
 // Name and value of row r in its slot (each string under 0x20 bytes).
 u32 RowName(s32 r) { return port_menu::String(kSlotRows + static_cast<u32>(r), kRowTable[r].name); }
@@ -60,7 +63,9 @@ constexpr s32 kFrameCaps[5] = {60, 120, 144, 240, 360};
 // Layout (12.4 screen units): title row as BRIGHTNESS, then one row per setting.
 constexpr s32 kTitleY = 0x520;
 constexpr s32 kFirstRowY = 0x6A0;
-constexpr s32 kRowStep = 0x1C0;
+// 24 pixels: nine rows (the last at y 298) in the frame that held eight rows of 28 (the last at
+// y 302), so the rows' frame and the inner outline keep the sizes PanelRects gives them.
+constexpr s32 kRowStep = 0x180;
 constexpr s32 kNameX = 0x300;
 constexpr s32 kValueX = 0xD00;
 constexpr s32 kSquareX = 0x1500;
@@ -98,7 +103,8 @@ s32 Choice(const port::GraphicsOptions& g, s32 row) {
         case 4: return g.internal_scale < 1 ? 0 : (g.internal_scale > 8 ? 7 : g.internal_scale - 1);
         case 5: return g.smooth_filter ? 1 : 0;
         case 6: return g.antialiasing < 0 ? 0 : (g.antialiasing > 2 ? 2 : g.antialiasing);
-        default: return g.sharp_text ? 1 : 0;
+        case 7: return g.sharp_text ? 1 : 0;
+        default: return !g.ultrawide ? 0 : (g.ultrawide_4x3_fov ? 1 : 2);
     }
 }
 
@@ -111,7 +117,12 @@ void SetChoice(port::GraphicsOptions& g, s32 row, s32 c) {
         case 4: g.internal_scale = c + 1; break;
         case 5: g.smooth_filter = c == 1; break;
         case 6: g.antialiasing = c; break;
-        default: g.sharp_text = c == 1; break;
+        case 7: g.sharp_text = c == 1; break;
+        default:
+            // OFF keeps the field-of-view choice, so turning ultrawide back on restores it.
+            g.ultrawide = c != 0;
+            if (c != 0) g.ultrawide_4x3_fov = c == 1;
+            break;
     }
 }
 
@@ -132,14 +143,14 @@ void MoveCursor(u32 obj) {
 u32 PanelRects() {
     u32 w[12];
     for (u32 i = 0; i < 8; ++i) w[i] = GRef<u32>(0x003AF3D0 + i * 4);
-    // The inner outline (centre (319.5, 197.5), 495 x 201) ends below the seventh row: one row
-    // taller and half a row lower, so it still encloses every row with TEXT (2026-11-22).
+    // The inner outline (centre (319.5, 197.5), 495 x 201) ended below the seventh row of 28
+    // pixels: 28 pixels taller and 14 lower, so it encloses every row (2026-11-22).
     w[4] += 0x00E0u << 16;
     w[5] += 0x01C0u << 16;
-    // One row (28 pixels) taller per row, centre moved down by half a row: 488 x 222 at (276, 186)
-    // for seven rows, 488 x 250 at (276, 200) for eight (TEXT, 2026-11-22).
+    // 488 x 250 at (276, 200): the frame of eight rows of 28 pixels, which also holds the nine
+    // rows of 24 (TEXT and ULTRAWIDE, 2026-11-22).
     w[8] = (0x7200u + 0x0C80u) << 16 | (0x6C00u + 0x1140u);  // centre (276, 200)
-    w[9] = 0x0FA0u << 16 | 0x1E80u;                             // 488 x 250 (eight rows)
+    w[9] = 0x0FA0u << 16 | 0x1E80u;                             // 488 x 250 (nine rows of 24)
     w[10] = 0x00D1C1A9u;
     w[11] = 0x3DCCCCCDu;  // 0.1
     return port_menu::Words(kSlotRects, w, 12);

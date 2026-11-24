@@ -45,6 +45,7 @@ struct FrameJob {
 
     std::uint64_t dispfb = 0, display = 0;  // sceGsPutDispEnv: DISPFB2, DISPLAY2
     int aspect_w = 4, aspect_h = 3;
+    float hud_x_scale = 1.0f;  // flight-overlay compensation in ultrawide; 1 elsewhere
     struct Movie {
         std::uint64_t serial = 0;
         std::uint32_t guest_addr = 0, guest_bytes = 0;

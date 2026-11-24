@@ -6,6 +6,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "game/main_context.h"
 #include "sce/sce.h"
 
@@ -61,6 +62,10 @@ void func_0010C850(f32 a, f32 b, f32 c, u32 view, u32 d) {
 void func_0010C9D0() {
     f32 width = 640.0f;
     if ((Ctx()->flags & 0x10000) != 0) width = GRef<f32>(0x0040DAA0);
+    // port: Hor+ ultrawide (EE 0x0010C9F4 loads the 640.0 that the PCSX2 21:9 patch raised to
+    // 1136.0). With the 4:3 field of view kept the width is 640 x window_aspect / (4/3); split screen
+    // halves the expanded width below, as in the original. Unchanged when not ultrawide.
+    if ((Ctx()->flags & 0x10000) != 0) width = port::UltrawideProjectionWidth(640.0f, width);
     const u32 game = g_GameState().addr;
     GRef<u8>(g_FlightScene() + 0x1650) = GRef<u8>(game + 0x25);
     for (u32 p = 0; p < GRef<u8>(g_GameState().addr + 0x25); ++p) {
@@ -469,7 +474,8 @@ void UpdateViewCameras() {
             GRef<u32>(up + 8) = 0;
             GRef<u32>(up + 0xC) = 0;
             func_0010D630(v, up);
-            if ((Ctx()->flags & 0x10000) != 0) z0 = GRef<f32>(0x0040DAC4);
+            // port: ultrawide with the 4:3 field of view keeps the 4:3 camera distance.
+            if ((Ctx()->flags & 0x10000) != 0 && !port::UltrawideUses4x3Distances()) z0 = GRef<f32>(0x0040DAC4);
             set_zoom(z0);
         } else if (Ctx()->sub == 0x19) {
             const u32 bits = GRef<u32>(rules + 0x20);
@@ -504,7 +510,9 @@ void UpdateViewCameras() {
                 z0 = GRef<f32>(0x0040DAC8);
                 func_0010D610(v, pl + 0x40);
                 func_0010D650(v, pl + 0x30, pl + 0x70);
-                if ((Ctx()->flags & 0x10000) != 0) z0 = GRef<f32>(0x0040DACC);
+                // port: ultrawide with the 4:3 field of view keeps the 4:3 external-view distance
+                // (0x0040DACC is the 16:9 one; the PCSX2 16:9 fix by nemesis2000 lowers it to 627.87).
+                if ((Ctx()->flags & 0x10000) != 0 && !port::UltrawideUses4x3Distances()) z0 = GRef<f32>(0x0040DACC);
             } else if (view == 1) {
                 GRef<u8>(v + 9) = 1;
                 GRef<u8>(v + 7) = 0x82;

@@ -22,6 +22,8 @@ TEST_CASE("settings: defaults") {
     CHECK(s.presentation.window_mode == WindowMode::Fullscreen);
     CHECK(s.presentation.internal_scale == 1);
     CHECK(s.presentation.default_screen_ratio == ScreenRatioDefault::Monitor);
+    CHECK(s.presentation.ultrawide);
+    CHECK(s.presentation.ultrawide_4x3_fov);
     CHECK_FALSE(s.debug.fps_overlay);
     CHECK(s.presentation.antialiasing == AntiAliasing::Fxaa);
     CHECK(s.presentation.frame_interpolation);
@@ -94,6 +96,24 @@ TEST_CASE("settings: anti-aliasing") {
     std::vector<std::string> warnings;
     CHECK_FALSE(store.LoadFromText(R"({"presentation":{"antialiasing":"msaa"}})", warnings));
     CHECK_FALSE(warnings.empty());
+}
+
+TEST_CASE("settings: ultrawide") {
+    SettingsStore store;
+    std::vector<std::string> warnings;
+    int notified = 0;
+    store.Subscribe(SettingsSection::Presentation, [&notified](const Settings&) { ++notified; });
+    CHECK(store.LoadFromText(R"({"presentation":{"ultrawide":false}})", warnings));
+    CHECK_FALSE(store.Get().presentation.ultrawide);
+    CHECK(nlohmann::json::parse(store.ToText())["presentation"]["ultrawide"] == false);
+    Settings next = store.Get();
+    next.presentation.ultrawide = true;
+    store.Replace(next);
+    CHECK(notified == 1);
+    CHECK_FALSE(store.LoadFromText(R"({"presentation":{"ultrawide":"auto"}})", warnings));
+    CHECK(store.LoadFromText(R"({"presentation":{"ultrawide_4x3_fov":false}})", warnings));
+    CHECK_FALSE(store.Get().presentation.ultrawide_4x3_fov);
+    CHECK(nlohmann::json::parse(store.ToText())["presentation"]["ultrawide_4x3_fov"] == false);
 }
 
 TEST_CASE("settings: frame interpolation") {
