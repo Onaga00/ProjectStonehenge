@@ -1,4 +1,5 @@
 #include "platform/log.h"
+#include "platform/paths.h"
 
 #include <chrono>
 #include <cstdio>
@@ -69,7 +70,7 @@ bool Open(const std::filesystem::path& logs_dir) {
         if (entry.is_regular_file(ec)) std::filesystem::remove(entry.path(), ec);
     }
     g_path = logs_dir / kFileName;
-    g_file = _wfopen(g_path.c_str(), L"wb");
+    g_file = platform::OpenFile(g_path, "wb");
     if (!g_file) return false;
     for (const auto& line : g_pending) {
         std::fputs(line.c_str(), g_file);

@@ -114,7 +114,13 @@ endforeach()
 
 add_library(ac04_volk STATIC "${volk_SOURCE_DIR}/volk.c")
 target_include_directories(ac04_volk PUBLIC "${volk_SOURCE_DIR}")
-target_compile_definitions(ac04_volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
+target_compile_definitions(ac04_volk PUBLIC VK_NO_PROTOTYPES)
+if(WIN32)
+    target_compile_definitions(ac04_volk PUBLIC VK_USE_PLATFORM_WIN32_KHR)
+else()
+    # volk loads libvulkan.so.1 at runtime (dlopen); the window surface comes from SDL.
+    target_link_libraries(ac04_volk PUBLIC ${CMAKE_DL_LIBS})
+endif()
 target_link_libraries(ac04_volk PUBLIC Vulkan::Headers)
 set_property(TARGET ac04_volk PROPERTY FOLDER "third_party")
 

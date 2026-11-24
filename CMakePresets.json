@@ -9,16 +9,29 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux (Ninja Multi-Config, x86-64)",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/linux",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
     }
   ],
   "buildPresets": [
     { "name": "debug",   "configurePreset": "windows", "configuration": "Debug" },
     { "name": "dev",     "configurePreset": "windows", "configuration": "RelWithDebInfo" },
-    { "name": "release", "configurePreset": "windows", "configuration": "Release" }
+    { "name": "release", "configurePreset": "windows", "configuration": "Release" },
+    { "name": "linux-debug",   "configurePreset": "linux", "configuration": "Debug" },
+    { "name": "linux-dev",     "configurePreset": "linux", "configuration": "RelWithDebInfo" },
+    { "name": "linux-release", "configurePreset": "linux", "configuration": "Release" }
   ],
   "testPresets": [
     { "name": "debug",   "configurePreset": "windows", "configuration": "Debug",          "output": { "outputOnFailure": true } },
     { "name": "dev",     "configurePreset": "windows", "configuration": "RelWithDebInfo", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "windows", "configuration": "Release",        "output": { "outputOnFailure": true } }
+    { "name": "release", "configurePreset": "windows", "configuration": "Release",        "output": { "outputOnFailure": true } },
+    { "name": "linux-debug",   "configurePreset": "linux", "configuration": "Debug",          "output": { "outputOnFailure": true } },
+    { "name": "linux-dev",     "configurePreset": "linux", "configuration": "RelWithDebInfo", "output": { "outputOnFailure": true } },
+    { "name": "linux-release", "configurePreset": "linux", "configuration": "Release",        "output": { "outputOnFailure": true } }
   ]
 }

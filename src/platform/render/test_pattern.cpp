@@ -1,5 +1,7 @@
 #include "platform/render/test_pattern.h"
 
+#include <cstddef>
+
 namespace ac04::render {
 
 std::vector<std::uint8_t> MakeTestPattern(int width, int height) {

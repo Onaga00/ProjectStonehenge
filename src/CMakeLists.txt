@@ -35,13 +35,29 @@ add_library(ac04_core STATIC
     platform/render/test_pattern.cpp
     platform/render/vu1/vif1.cpp
     platform/render/vu1/vu1_programs.cpp
-    platform/vu0/vu0_hle.cpp
-    platform/win32/crash_win32.cpp
-    platform/win32/file_reader_win32.cpp
-    platform/win32/paths_win32.cpp
-    platform/win32/system_info_win32.cpp
-    platform/win32/timer_win32.cpp)
-target_link_libraries(ac04_core PUBLIC ac04_options ac04_json PRIVATE shell32 ole32 winmm)
+    platform/vu0/vu0_hle.cpp)
+if(WIN32)
+    target_sources(ac04_core PRIVATE
+        platform/win32/crash_win32.cpp
+        platform/win32/file_reader_win32.cpp
+        platform/win32/paths_win32.cpp
+        platform/win32/system_info_win32.cpp
+        platform/win32/timer_win32.cpp)
+    target_link_libraries(ac04_core PUBLIC ac04_options ac04_json PRIVATE shell32 ole32 winmm)
+else()
+    target_sources(ac04_core PRIVATE
+        platform/posix/crash_posix.cpp
+        platform/posix/file_reader_posix.cpp
+        platform/posix/paths_posix.cpp
+        platform/posix/system_info_posix.cpp
+        platform/posix/timer_posix.cpp)
+    find_package(Threads REQUIRED)
+    target_link_libraries(ac04_core PUBLIC ac04_options ac04_json Threads::Threads PRIVATE ${CMAKE_DL_LIBS})
+    # The VU micro-mode helpers switch the SSE rounding mode (vu0::micro::ChopScope); MSVC is told
+    # with #pragma fenv_access(on) in these files, GCC/Clang with -frounding-math.
+    set_source_files_properties(platform/vu0/vu0_hle.cpp platform/render/vu1/vu1_programs.cpp
+        PROPERTIES COMPILE_OPTIONS "-frounding-math")
+endif()
 
 add_library(ac04_platform STATIC
     platform/audio.cpp
@@ -184,10 +200,17 @@ add_library(ac04_game OBJECT
     sce/sce_host.cpp)
 target_link_libraries(ac04_game PUBLIC ac04_core PRIVATE ac04_mpeg2)
 
-add_executable(ProjectStonehenge main.cpp "${CMAKE_BINARY_DIR}/generated/version.rc")
+add_executable(ProjectStonehenge main.cpp)
 target_link_libraries(ProjectStonehenge PRIVATE ac04_game ac04_platform)
-# Release builds are a GUI program (no console window); development builds keep the console so
-# the log is also visible there.
-target_link_options(ProjectStonehenge PRIVATE $<IF:$<CONFIG:Release>,/SUBSYSTEM:WINDOWS,/SUBSYSTEM:CONSOLE>)
+if(WIN32)
+    target_sources(ProjectStonehenge PRIVATE "${CMAKE_BINARY_DIR}/generated/version.rc")
+    # Release builds are a GUI program (no console window); development builds keep the console so
+    # the log is also visible there.
+    target_link_options(ProjectStonehenge PRIVATE $<IF:$<CONFIG:Release>,/SUBSYSTEM:WINDOWS,/SUBSYSTEM:CONSOLE>)
+else()
+    # Linux: the C++ runtime is linked statically, so the AppImage runs on any distribution with
+    # glibc >= 2.35 whatever its libstdc++ (the counterpart of the static MSVC runtime, /MT).
+    target_link_options(ProjectStonehenge PRIVATE -static-libstdc++ -static-libgcc)
+endif()
 set_target_properties(ProjectStonehenge PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT ProjectStonehenge)

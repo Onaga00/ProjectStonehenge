@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ProjectStonehenge
+Comment=Unofficial native PC port of Ace Combat 04: Shattered Skies (needs your own NTSC-U disc image)
+Exec=ProjectStonehenge
+Icon=projectstonehenge
+Categories=Game;
+Terminal=false
